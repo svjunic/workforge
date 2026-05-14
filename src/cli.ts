@@ -3,14 +3,17 @@
 import { Command } from "commander";
 import { execa, type Options } from "execa";
 import { customAlphabet } from "nanoid";
-import { mkdir, readFile, rm, writeFile, appendFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile, appendFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { createInterface } from "node:readline/promises";
 import { z } from "zod";
 
 const AITASK_DIR = ".aitask";
 const TASKS_FILE = "tasks.json";
 const CONFIG_FILE = "config.json";
+const TMUX_LAYOUT_FILE = "tmux-layout.json";
 const LOGS_DIR = "logs";
 const COMMENTS_DIR = "comments";
 const DIFFS_DIR = "diffs";
@@ -18,17 +21,169 @@ const WORKTREES_DIR = "worktrees";
 
 const taskId = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 8);
 
+const CREATE_TEMPLATE = `# TASK-001 ログイン画面追加
+
+## 目的
+
+email / password によるログイン画面を追加する。
+
+---
+
+## 背景
+
+- 現在ログイン機能は未実装
+- 認証APIは既に存在している
+- UIデザインは Figma を参照する
+
+---
+
+## 作業範囲
+
+### 変更許可
+
+- apps/web/app/login/**
+- apps/web/components/**
+- packages/ui/**
+
+### 変更禁止
+
+- infra/**
+- database/**
+- package.json
+- lockfile
+
+---
+
+## 要件
+
+- email/password 入力フォームを表示する
+- ログインボタンを表示する
+- 未入力時は validation error を表示する
+- ログイン成功時は \`/dashboard\` へ遷移する
+- ログイン失敗時は toast を表示する
+
+---
+
+## 対象外
+
+- サインアップ機能
+- パスワードリセット
+- OAuth
+- backend の認証実装
+
+---
+
+## 受け入れ条件
+
+- ログイン画面が表示される
+- モバイル幅でもUIが崩れない
+- \`console.error\` が発生しない
+- hydration error が発生しない
+
+---
+
+## 検証コマンド
+
+\`\`\`bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+\`\`\`
+
+---
+
+## テスト方針
+
+- Vitest による unit test
+- Playwright によるログインフロー確認
+
+---
+
+## 最初に確認するファイル
+
+- apps/web/app/page.tsx
+- apps/web/components/form/*
+- packages/ui/button.tsx
+
+---
+
+## 実装メモ
+
+- 既存の Button component を再利用する
+- server action は使用しない
+- react-hook-form 使用可
+
+---
+
+## 制約
+
+- App Router 構成を維持する
+- TypeScript strict mode を壊さない
+- \`any\` を追加しない
+
+---
+
+## エージェント向け指示
+
+- まず既存実装を調査する
+- 小さい commit 単位で進める
+- 不要な refactor をしない
+- 作業範囲外の変更は禁止
+
+---
+
+## 完了条件
+
+- 検証コマンドが全て成功する
+- 受け入れ条件を満たす
+- diff が作業範囲内に収まっている
+
+---
+
+## リトライ方針
+
+最大3回まで self-fix を許可する。
+
+失敗時は以下を確認して修正すること。
+
+- test log
+- build log
+- stack trace
+
+---
+
+## 出力内容
+
+- commit 内容
+- 変更ファイル一覧
+- 実装概要
+- 残課題 / リスク
+`;
+
 const AgentSchema = z.enum(["claude", "codex"]);
 type AgentName = z.infer<typeof AgentSchema>;
+
+const TmuxPanePlacementSchema = z.enum(["default", "rightColumnPairs"]);
 
 const ConfigSchema = z.object({
   defaultAgent: AgentSchema.default("claude"),
   worktreeRoot: z.string().default(".aitask/worktrees"),
   tmuxSessionPrefix: z.string().default("aitask"),
-  keepPaneOnDone: z.boolean().default(true)
+  keepPaneOnDone: z.boolean().default(true),
+  tmuxPanePlacement: TmuxPanePlacementSchema.default("rightColumnPairs")
 });
 
 type Config = z.infer<typeof ConfigSchema>;
+
+const TmuxLayoutSchema = z.object({
+  windows: z.record(z.object({
+    anchorPaneId: z.string(),
+    pendingTopPaneId: z.string().optional()
+  })).default({})
+});
+
+type TmuxLayout = z.infer<typeof TmuxLayoutSchema>;
 
 const TaskStatusSchema = z.enum(["created", "running", "stopped", "review", "deleted"]);
 type TaskStatus = z.infer<typeof TaskStatusSchema>;
@@ -86,18 +241,19 @@ async function main() {
 
   program
     .command("create")
-    .argument("<title>", "タスクタイトル")
+    .argument("[title]", "タスクタイトル")
     .option("--description <text>", "タスクの説明")
-    .action(async (title: string, options: { description?: string }) => {
+    .action(async (title: string | undefined, options: { description?: string }) => {
       const ctx = await loadRepoContext();
       await ensureInitialized(ctx);
       await ensureInitialCommit(ctx);
       await ensureBaseBranch(ctx, "main");
 
+      const input = await resolveCreateInput(title, options);
       const config = await loadConfig(ctx);
       const tasks = await loadTasks(ctx);
       const id = taskId();
-      const slug = slugify(title);
+      const slug = slugify(input.title);
       const branch = `aitask/${id}-${slug}`;
       const worktreePath = path.resolve(ctx.root, config.worktreeRoot, id);
 
@@ -107,8 +263,8 @@ async function main() {
       const now = new Date().toISOString();
       const task: Task = {
         id,
-        title,
-        description: options.description,
+        title: input.title,
+        description: input.description,
         slug,
         branch,
         baseBranch: "main",
@@ -127,18 +283,27 @@ async function main() {
 
   program
     .command("list")
+    .option("--all", "deleted を含むすべてのタスクを表示します")
     .description("タスク一覧を表示します。")
-    .action(async () => {
+    .action(async (options: { all?: boolean }) => {
       const ctx = await loadRepoContext();
       await ensureInitialized(ctx);
       const tasks = await loadTasks(ctx);
-      if (tasks.tasks.length === 0) {
+      const visibleTasks = (options.all ? tasks.tasks : tasks.tasks.filter((task) => task.status !== "deleted"))
+        .map((task, index) => ({ task, index }))
+        .sort((a, b) => {
+          const byCreatedAt = b.task.createdAt.localeCompare(a.task.createdAt);
+          return byCreatedAt || a.index - b.index;
+        })
+        .map(({ task }) => task);
+
+      if (visibleTasks.length === 0) {
         console.log("タスクはありません。");
         return;
       }
 
-      for (const task of tasks.tasks) {
-        console.log(`${task.id}\t${task.status}\t${task.branch}\t${task.title}`);
+      for (const task of visibleTasks) {
+        console.log(`${task.createdAt}\t${task.id}\t${task.status}\t${task.branch}\t${task.title}`);
       }
     });
 
@@ -175,11 +340,12 @@ async function main() {
 
   program
     .command("run")
-    .argument("<taskId>", "タスクID")
+    .argument("[taskId]", "タスクID")
     .option("--agent <agent>", "エージェント adapter: claude または codex")
     .description("タスク用のエージェントを tmux で起動します。")
-    .action(async (id: string, options: { agent?: string }) => {
-      await runTask(id, options.agent, false);
+    .action(async (id: string | undefined, options: { agent?: string }) => {
+      const taskId = id ?? await selectTaskId("実行するタスクを選択してください");
+      await runTask(taskId, options.agent, false);
     });
 
   program
@@ -263,33 +429,44 @@ async function main() {
 
   program
     .command("delete")
-    .argument("<taskId>", "タスクID")
+    .argument("[taskId]", "タスクID")
     .option("--force", "git worktree の削除を強制します")
+    .option("--all", "未削除のタスクをすべて削除します")
     .description("タスク worktree を削除し、状態を deleted にします。")
-    .action(async (id: string, options: { force?: boolean }) => {
+    .action(async (id: string | undefined, options: { force?: boolean; all?: boolean }) => {
       const ctx = await loadRepoContext();
       await ensureInitialized(ctx);
       const tasks = await loadTasks(ctx);
-      const task = findTask(tasks.tasks, id);
 
-      if (await tmuxTargetExists(task)) {
-        await killTmuxTarget(task);
+      if (options.all && id) {
+        throw new CliError("--all と taskId は同時に指定できません。");
       }
 
-      const args = ["worktree", "remove"];
-      if (options.force) args.push("--force");
-      args.push(task.worktreePath);
+      if (options.all) {
+        const targets = selectableTasks(tasks.tasks);
+        if (targets.length === 0) throw new CliError("削除対象のタスクはありません。");
 
-      const removal = await git(ctx, args, { reject: false });
-      if (removal.failed && !options.force) {
-        throw new CliError(`worktree を削除できませんでした。意図した削除なら --force を付けて再実行してください。\n${removal.stderr}`);
+        console.log("削除対象:");
+        for (const task of targets) {
+          console.log(formatTaskChoice(task));
+        }
+        if (!await confirmPrompt(`${targets.length} 件のタスクをすべて削除しますか? [y/N] `)) {
+          console.log("削除を中止しました。");
+          return;
+        }
+
+        for (const task of targets) {
+          await deleteTask(ctx, task, { force: options.force });
+          await saveTasks(ctx, tasks);
+          console.log(`削除しました: ${task.id}`);
+        }
+        return;
       }
 
-      if (removal.failed) {
-        await rm(task.worktreePath, { recursive: true, force: true });
-      }
+      const taskId = id ?? await selectTaskId("削除するタスクを選択してください", tasks.tasks);
+      const task = findTask(tasks.tasks, taskId);
 
-      updateTask(task, { status: "deleted" });
+      await deleteTask(ctx, task, { force: options.force });
       await saveTasks(ctx, tasks);
       console.log(`削除しました: ${task.id}`);
     });
@@ -317,7 +494,7 @@ async function runTask(id: string, agentOption: string | undefined, isResume: bo
   if (task.status === "deleted") throw new CliError(`タスク ${task.id} は削除済みです。`);
 
   const agent = resolveAgent(agentOption, config);
-  const adapter = adapters[agent];
+  const adapter = buildAgentAdapter(agent, isResume);
   await ensureCommand(adapter.command, `${agent} adapter を使うには ${adapter.command} が必要です。`);
 
   const logPath = path.join(ctx.aitaskDir, LOGS_DIR, `${task.id}.log`);
@@ -328,7 +505,7 @@ async function runTask(id: string, agentOption: string | undefined, isResume: bo
     await killTmuxTarget(task);
   }
 
-  const tmuxTarget = await startTmuxTask(config, task, shellCommand);
+  const tmuxTarget = await startTmuxTask(ctx, config, task, shellCommand);
 
   updateTask(task, {
     status: "running",
@@ -401,6 +578,146 @@ async function saveTasks(ctx: RepoContext, tasks: { tasks: Task[] }) {
   await writeJson(path.join(ctx.aitaskDir, TASKS_FILE), TasksSchema.parse(tasks));
 }
 
+async function loadTmuxLayout(ctx: RepoContext): Promise<TmuxLayout> {
+  const layoutPath = path.join(ctx.aitaskDir, TMUX_LAYOUT_FILE);
+  try {
+    return TmuxLayoutSchema.parse(JSON.parse(await readFile(layoutPath, "utf8")));
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      throw new CliError(`${path.relative(ctx.root, layoutPath)} が不正です: ${error.message}`);
+    }
+    return { windows: {} };
+  }
+}
+
+async function saveTmuxLayout(ctx: RepoContext, layout: TmuxLayout) {
+  await writeJson(path.join(ctx.aitaskDir, TMUX_LAYOUT_FILE), TmuxLayoutSchema.parse(layout));
+}
+
+async function resolveCreateInput(title: string | undefined, options: { description?: string }): Promise<{ title: string; description?: string }> {
+  if (title) {
+    return { title, description: options.description };
+  }
+  if (options.description) {
+    throw new CliError("title を省略してエディタ入力する場合、--description は指定できません。");
+  }
+
+  const description = await editCreateTemplate();
+  if (!description.trim()) {
+    throw new CliError("タスク本文が空です。");
+  }
+
+  const extractedTitle = extractMarkdownTitle(description);
+  if (!extractedTitle) {
+    throw new CliError("タスク本文の最初の Markdown H1 を title として入力してください。");
+  }
+
+  return { title: extractedTitle, description };
+}
+
+async function editCreateTemplate(): Promise<string> {
+  const editor = process.env.VISUAL || process.env.EDITOR;
+  if (!editor) {
+    throw new CliError("title を省略する場合は VISUAL または EDITOR を設定してください。");
+  }
+
+  const tempDir = await mkdtemp(path.join(tmpdir(), "aitask-create-"));
+  const tempPath = path.join(tempDir, "task.md");
+  await writeFile(tempPath, CREATE_TEMPLATE, "utf8");
+
+  try {
+    const result = await execa(editor, [tempPath], { stdio: "inherit", reject: false });
+    if (result.failed) {
+      throw new CliError(`エディタを終了できませんでした: ${result.shortMessage}`);
+    }
+    return await readFile(tempPath, "utf8");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+function extractMarkdownTitle(markdown: string): string | undefined {
+  const h1 = markdown.split(/\r?\n/).find((line) => line.startsWith("# ") && line.slice(2).trim());
+  return h1?.slice(2).trim();
+}
+
+async function selectTaskId(prompt: string, existingTasks?: Task[]): Promise<string> {
+  const tasks = existingTasks ?? await loadSelectableTasks();
+  const candidates = selectableTasks(tasks);
+  if (candidates.length === 0) throw new CliError("選択できるタスクはありません。");
+
+  const selectedByFzf = await selectTaskIdWithFzf(prompt, candidates);
+  if (selectedByFzf) return selectedByFzf;
+
+  return selectTaskIdByNumber(prompt, candidates);
+}
+
+async function loadSelectableTasks(): Promise<Task[]> {
+  const ctx = await loadRepoContext();
+  await ensureInitialized(ctx);
+  return (await loadTasks(ctx)).tasks;
+}
+
+function selectableTasks(tasks: Task[]): Task[] {
+  return tasks.filter((task) => task.status !== "deleted");
+}
+
+async function selectTaskIdWithFzf(prompt: string, tasks: Task[]): Promise<string | undefined> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY || !await commandExists("fzf")) return undefined;
+
+  const input = `${tasks.map(formatTaskChoice).join("\n")}\n`;
+  const selected = await execa("fzf", ["--prompt", `${prompt}> `], {
+    input,
+    stderr: "inherit",
+    reject: false
+  });
+  if (selected.failed) return undefined;
+
+  const id = selected.stdout.trim().split("\t")[0];
+  return id || undefined;
+}
+
+async function selectTaskIdByNumber(prompt: string, tasks: Task[]): Promise<string> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new CliError("taskId を指定してください。");
+  }
+
+  console.log(prompt);
+  tasks.forEach((task, index) => {
+    console.log(`${index + 1}. ${formatTaskChoice(task)}`);
+  });
+
+  const answer = await question("番号を入力してください: ");
+  const selectedIndex = Number(answer.trim());
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 1 || selectedIndex > tasks.length) {
+    throw new CliError("選択が不正です。");
+  }
+
+  return tasks[selectedIndex - 1]!.id;
+}
+
+function formatTaskChoice(task: Task): string {
+  return `${task.id}\t${task.status}\t${task.branch}\t${task.title}`;
+}
+
+async function confirmPrompt(prompt: string): Promise<boolean> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new CliError("確認プロンプトを表示できないため、削除を中止しました。");
+  }
+
+  const answer = await question(prompt);
+  return ["y", "yes"].includes(answer.trim().toLowerCase());
+}
+
+async function question(prompt: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await rl.question(prompt);
+  } finally {
+    rl.close();
+  }
+}
+
 function findTask(tasks: Task[], id: string): Task {
   const matches = tasks.filter((task) => task.id === id || task.id.startsWith(id));
   if (matches.length === 0) throw new CliError(`タスクが見つかりません: ${id}`);
@@ -419,12 +736,22 @@ function resolveAgent(agentOption: string | undefined, config: Config): AgentNam
   return parsed.data;
 }
 
+function buildAgentAdapter(agent: AgentName, isResume: boolean): AgentAdapter {
+  const adapter = adapters[agent];
+  if (agent !== "claude") return adapter;
+  return {
+    ...adapter,
+    args: ["--permission-mode", isResume ? "auto" : "plan", ...adapter.args]
+  };
+}
+
 function defaultConfig(): Config {
   return {
     defaultAgent: "claude",
     worktreeRoot: ".aitask/worktrees",
     tmuxSessionPrefix: "aitask",
-    keepPaneOnDone: true
+    keepPaneOnDone: true,
+    tmuxPanePlacement: "rightColumnPairs"
   };
 }
 
@@ -448,22 +775,16 @@ function tmuxTargetForTask(task: Task): string {
   return `${task.tmuxSession}:${task.tmuxWindow}`;
 }
 
-async function startTmuxTask(config: Config, task: Task, shellCommand: string): Promise<{ session: string; target: string; type: "session" | "pane" }> {
+async function startTmuxTask(ctx: RepoContext, config: Config, task: Task, shellCommand: string): Promise<{ session: string; target: string; type: "session" | "pane" }> {
   if (process.env.TMUX) {
-    const started = await execa("tmux", [
-      "split-window",
-      "-P",
-      "-F",
-      "#{session_name}:#{window_index}.#{pane_index}",
-      "-c",
-      task.worktreePath,
-      shellCommand
-    ], { reject: false });
+    const started = config.tmuxPanePlacement === "rightColumnPairs"
+      ? await startRightColumnPairPane(ctx, task, shellCommand)
+      : await splitTmuxPane(["split-window"], task, shellCommand);
     if (started.failed) {
       throw new CliError(`tmux pane を起動できませんでした: ${started.stderr || started.shortMessage}`);
     }
 
-    const target = started.stdout.trim();
+    const target = started.stdout.trim().split("\t")[0] ?? "";
     if (!target) {
       throw new CliError("作成した tmux pane の target を取得できませんでした。");
     }
@@ -485,6 +806,59 @@ async function startTmuxTask(config: Config, task: Task, shellCommand: string): 
   }
 
   return { session, target: session, type: "session" };
+}
+
+async function startRightColumnPairPane(ctx: RepoContext, task: Task, shellCommand: string) {
+  const current = await currentTmuxWindow();
+  const layout = await loadTmuxLayout(ctx);
+  const state = layout.windows[current.windowKey];
+
+  if (state?.pendingTopPaneId && await tmuxPaneExists(state.pendingTopPaneId)) {
+    const started = await splitTmuxPane(["split-window", "-v", "-t", state.pendingTopPaneId], task, shellCommand);
+    if (!started.failed) {
+      layout.windows[current.windowKey] = { anchorPaneId: state.anchorPaneId };
+      await saveTmuxLayout(ctx, layout);
+    }
+    return started;
+  }
+
+  const anchorPaneId = state?.anchorPaneId && await tmuxPaneExists(state.anchorPaneId)
+    ? state.anchorPaneId
+    : current.paneId;
+  const started = await splitTmuxPane(["split-window", "-h", "-t", anchorPaneId], task, shellCommand);
+  if (!started.failed) {
+    const paneId = started.stdout.trim().split("\t")[1];
+    layout.windows[current.windowKey] = {
+      anchorPaneId,
+      ...(paneId ? { pendingTopPaneId: paneId } : {})
+    };
+    await saveTmuxLayout(ctx, layout);
+  }
+  return started;
+}
+
+async function splitTmuxPane(baseArgs: string[], task: Task, shellCommand: string) {
+  return execa("tmux", [
+    ...baseArgs,
+    "-P",
+    "-F",
+    "#{session_name}:#{window_index}.#{pane_index}\t#{pane_id}",
+    "-c",
+    task.worktreePath,
+    shellCommand
+  ], { reject: false });
+}
+
+async function currentTmuxWindow(): Promise<{ windowKey: string; paneId: string }> {
+  const result = await execa("tmux", ["display-message", "-p", "#{session_name}:#{window_index}\t#{pane_id}"], { reject: false });
+  if (result.failed) {
+    throw new CliError(`現在の tmux window を取得できませんでした: ${result.stderr || result.shortMessage}`);
+  }
+  const [windowKey, paneId] = result.stdout.trim().split("\t");
+  if (!windowKey || !paneId) {
+    throw new CliError("現在の tmux window を取得できませんでした。");
+  }
+  return { windowKey, paneId };
 }
 
 function buildAgentPrompt(task: Task, isResume: boolean): string {
@@ -520,9 +894,19 @@ async function ensureCommand(command: string, message: string) {
   if (result.failed || !result.stdout.trim()) throw new CliError(message);
 }
 
+async function commandExists(command: string): Promise<boolean> {
+  const result = await execa("command", ["-v", command], { shell: true, reject: false });
+  return !result.failed && Boolean(result.stdout.trim());
+}
+
 async function tmuxTargetExists(task: Task): Promise<boolean> {
   if (!task.tmuxSession) return false;
   const result = await execa("tmux", ["display-message", "-p", "-t", tmuxTargetForTask(task), "#{session_name}:#{window_index}.#{pane_index}"], { reject: false });
+  return !result.failed;
+}
+
+async function tmuxPaneExists(paneId: string): Promise<boolean> {
+  const result = await execa("tmux", ["display-message", "-p", "-t", paneId, "#{pane_id}"], { reject: false });
   return !result.failed;
 }
 
@@ -541,6 +925,27 @@ async function killTmuxTarget(task: Task) {
     return;
   }
   await execa("tmux", ["kill-session", "-t", target], { reject: false });
+}
+
+async function deleteTask(ctx: RepoContext, task: Task, options: { force?: boolean }) {
+  if (await tmuxTargetExists(task)) {
+    await killTmuxTarget(task);
+  }
+
+  const args = ["worktree", "remove"];
+  if (options.force) args.push("--force");
+  args.push(task.worktreePath);
+
+  const removal = await git(ctx, args, { reject: false });
+  if (removal.failed && !options.force) {
+    throw new CliError(`worktree を削除できませんでした。意図した削除なら --force を付けて再実行してください。\n${removal.stderr}`);
+  }
+
+  if (removal.failed) {
+    await rm(task.worktreePath, { recursive: true, force: true });
+  }
+
+  updateTask(task, { status: "deleted" });
 }
 
 async function git(ctx: RepoContext, args: string[], options: Options = {}) {
