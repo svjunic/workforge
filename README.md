@@ -48,15 +48,15 @@ aitask run <taskId>
 
 ### `aitask status [taskId]`
 
-タスク詳細と tmux セッションの状態を表示します。`taskId` を省略した場合は簡易一覧を表示します。
+タスク詳細と tmux の状態を表示します。`taskId` を省略した場合は簡易一覧を表示します。
 
 ### `aitask run <taskId> [--agent claude|codex]`
 
-選択した adapter をタスクの worktree で tmux 起動します。`--agent` は `.aitask/config.json` の `defaultAgent` より優先されます。タスク状態は `running` になります。
+選択した adapter をタスクの worktree で tmux 起動します。tmux 内から実行した場合は現在の window 内に新しい pane を作成し、tmux 外から実行した場合は従来どおりタスク専用 session を作成します。`--agent` は `.aitask/config.json` の `defaultAgent` より優先されます。タスク状態は `running` になります。
 
 ### `aitask stop <taskId>`
 
-対象タスクの tmux pane に `Ctrl-C` を送り、タスク状態を `stopped` にします。
+対象タスクの tmux pane/session に `Ctrl-C` を送り、タスク状態を `stopped` にします。
 
 ### `aitask resume <taskId>`
 
@@ -111,7 +111,7 @@ aitask run <taskId>
 
 - `main` は直接変更しません。
 - 1 task = 1 branch = 1 worktree です。
-- AI プロセス終了後も、既定では tmux pane を残します。
+- AI プロセス終了後も、既定では tmux pane/session を残します。
 - 停止したタスクは `resume` で再開します。
 - 自動 merge は行いません。
 - git リポジトリ外、初期コミットなし、`tmux` なし、adapter コマンドなし、設定不正は明確なエラーにします。

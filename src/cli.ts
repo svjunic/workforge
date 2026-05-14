@@ -45,6 +45,7 @@ const TaskSchema = z.object({
   agent: AgentSchema.optional(),
   tmuxSession: z.string().optional(),
   tmuxWindow: z.string().optional(),
+  tmuxTargetType: z.enum(["session", "window", "pane"]).optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -78,7 +79,7 @@ async function main() {
 
   program
     .name("aitask")
-    .description("git worktree と tmux pane で AI タスクをローカル実行する CLI。")
+    .description("git worktree と tmux pane/session で AI タスクをローカル実行する CLI。")
     .version("0.1.0", "-V, --version", "バージョン番号を表示します。")
     .helpOption("-h, --help", "ヘルプを表示します。")
     .addHelpCommand("help [command]", "コマンドのヘルプを表示します。");
@@ -166,8 +167,9 @@ async function main() {
       console.log(`worktree: ${task.worktreePath}`);
       if (task.agent) console.log(`エージェント: ${task.agent}`);
       if (task.tmuxSession) {
-        const alive = await tmuxSessionExists(task.tmuxSession);
-        console.log(`tmux: ${task.tmuxSession} (${alive ? "存在します" : "見つかりません"})`);
+        const target = tmuxTargetForTask(task);
+        const alive = await tmuxTargetExists(task);
+        console.log(`tmux: ${target} (${alive ? "存在します" : "見つかりません"})`);
       }
     });
 
@@ -190,8 +192,8 @@ async function main() {
       const tasks = await loadTasks(ctx);
       const task = findTask(tasks.tasks, id);
 
-      if (task.tmuxSession && await tmuxSessionExists(task.tmuxSession)) {
-        await execa("tmux", ["send-keys", "-t", task.tmuxSession, "C-c"]);
+      if (await tmuxTargetExists(task)) {
+        await execa("tmux", ["send-keys", "-t", tmuxTargetForTask(task), "C-c"]);
       }
 
       updateTask(task, { status: "stopped" });
@@ -270,8 +272,8 @@ async function main() {
       const tasks = await loadTasks(ctx);
       const task = findTask(tasks.tasks, id);
 
-      if (task.tmuxSession && await tmuxSessionExists(task.tmuxSession)) {
-        await execa("tmux", ["kill-session", "-t", task.tmuxSession]);
+      if (await tmuxTargetExists(task)) {
+        await killTmuxTarget(task);
       }
 
       const args = ["worktree", "remove"];
@@ -318,37 +320,26 @@ async function runTask(id: string, agentOption: string | undefined, isResume: bo
   const adapter = adapters[agent];
   await ensureCommand(adapter.command, `${agent} adapter を使うには ${adapter.command} が必要です。`);
 
-  const session = tmuxSessionName(config, task.id);
   const logPath = path.join(ctx.aitaskDir, LOGS_DIR, `${task.id}.log`);
   const prompt = buildAgentPrompt(task, isResume);
   const shellCommand = buildTmuxShellCommand(adapter, prompt, logPath, config.keepPaneOnDone);
 
-  if (await tmuxSessionExists(session)) {
-    await execa("tmux", ["kill-session", "-t", session]);
+  if (await tmuxTargetExists(task)) {
+    await killTmuxTarget(task);
   }
 
-  const started = await execa("tmux", [
-    "new-session",
-    "-d",
-    "-s",
-    session,
-    "-c",
-    task.worktreePath,
-    shellCommand
-  ], { reject: false });
-  if (started.failed) {
-    throw new CliError(`tmux セッションを起動できませんでした: ${started.stderr || started.shortMessage}`);
-  }
+  const tmuxTarget = await startTmuxTask(config, task, shellCommand);
 
   updateTask(task, {
     status: "running",
     agent,
-    tmuxSession: session,
-    tmuxWindow: "0"
+    tmuxSession: tmuxTarget.session,
+    tmuxWindow: tmuxTarget.target,
+    tmuxTargetType: tmuxTarget.type
   });
   await saveTasks(ctx, tasks);
   console.log(`${isResume ? "再開しました" : "実行を開始しました"}: ${task.id}`);
-  console.log(`tmux: ${session}`);
+  console.log(`tmux: ${tmuxTarget.target}`);
   console.log(`ログ: ${logPath}`);
 }
 
@@ -450,6 +441,52 @@ function tmuxSessionName(config: Config, id: string): string {
   return `${config.tmuxSessionPrefix}-${id}`;
 }
 
+function tmuxTargetForTask(task: Task): string {
+  if (!task.tmuxSession) return "";
+  if (!task.tmuxWindow) return task.tmuxSession;
+  if (task.tmuxWindow.includes(":")) return task.tmuxWindow;
+  return `${task.tmuxSession}:${task.tmuxWindow}`;
+}
+
+async function startTmuxTask(config: Config, task: Task, shellCommand: string): Promise<{ session: string; target: string; type: "session" | "pane" }> {
+  if (process.env.TMUX) {
+    const started = await execa("tmux", [
+      "split-window",
+      "-P",
+      "-F",
+      "#{session_name}:#{window_index}.#{pane_index}",
+      "-c",
+      task.worktreePath,
+      shellCommand
+    ], { reject: false });
+    if (started.failed) {
+      throw new CliError(`tmux pane を起動できませんでした: ${started.stderr || started.shortMessage}`);
+    }
+
+    const target = started.stdout.trim();
+    if (!target) {
+      throw new CliError("作成した tmux pane の target を取得できませんでした。");
+    }
+    return { session: target.split(":")[0]!, target, type: "pane" };
+  }
+
+  const session = tmuxSessionName(config, task.id);
+  const started = await execa("tmux", [
+    "new-session",
+    "-d",
+    "-s",
+    session,
+    "-c",
+    task.worktreePath,
+    shellCommand
+  ], { reject: false });
+  if (started.failed) {
+    throw new CliError(`tmux セッションを起動できませんでした: ${started.stderr || started.shortMessage}`);
+  }
+
+  return { session, target: session, type: "session" };
+}
+
 function buildAgentPrompt(task: Task, isResume: boolean): string {
   const lines = [
     `aitask タスク ${task.id} を${isResume ? "再開" : "実装"}してください: ${task.title}`,
@@ -464,7 +501,7 @@ function buildAgentPrompt(task: Task, isResume: boolean): string {
 function buildTmuxShellCommand(adapter: AgentAdapter, prompt: string, logPath: string, keepPaneOnDone: boolean): string {
   const command = [adapter.command, ...adapter.args, prompt].map(shellQuote).join(" ");
   const logCommand = `tmux pipe-pane -o ${shellQuote(`cat >> ${logPath}`)}`;
-  const suffix = keepPaneOnDone ? "; printf '\\n[aitask] プロセスが終了しました。この pane を閉じるには Ctrl-D を押してください。\\n'; exec $SHELL" : "";
+  const suffix = keepPaneOnDone ? "; printf '\\n[aitask] プロセスが終了しました。この tmux pane/session を閉じるには Ctrl-D を押してください。\\n'; exec $SHELL" : "";
   return `${logCommand}; ${command}${suffix}`;
 }
 
@@ -483,9 +520,27 @@ async function ensureCommand(command: string, message: string) {
   if (result.failed || !result.stdout.trim()) throw new CliError(message);
 }
 
-async function tmuxSessionExists(session: string): Promise<boolean> {
-  const result = await execa("tmux", ["has-session", "-t", session], { reject: false });
+async function tmuxTargetExists(task: Task): Promise<boolean> {
+  if (!task.tmuxSession) return false;
+  const result = await execa("tmux", ["display-message", "-p", "-t", tmuxTargetForTask(task), "#{session_name}:#{window_index}.#{pane_index}"], { reject: false });
   return !result.failed;
+}
+
+async function killTmuxTarget(task: Task) {
+  const target = tmuxTargetForTask(task);
+  if (task.tmuxTargetType === "session") {
+    await execa("tmux", ["kill-session", "-t", target], { reject: false });
+    return;
+  }
+  if (task.tmuxTargetType === "pane" || target.includes(".")) {
+    await execa("tmux", ["kill-pane", "-t", target], { reject: false });
+    return;
+  }
+  if (task.tmuxTargetType === "window" || task.tmuxWindow) {
+    await execa("tmux", ["kill-window", "-t", target], { reject: false });
+    return;
+  }
+  await execa("tmux", ["kill-session", "-t", target], { reject: false });
 }
 
 async function git(ctx: RepoContext, args: string[], options: Options = {}) {

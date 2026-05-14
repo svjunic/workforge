@@ -1,7 +1,7 @@
 {
   "name": "aitask",
   "version": "0.1.0",
-  "description": "git worktree と tmux pane で AI タスクをローカル実行する CLI。",
+  "description": "git worktree と tmux pane/session で AI タスクをローカル実行する CLI。",
   "type": "module",
   "bin": {
     "aitask": "dist/cli.js"
