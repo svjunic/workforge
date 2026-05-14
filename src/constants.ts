@@ -1,0 +1,9 @@
+export const WORKFORGE_DIR = ".workforge";
+export const TASKS_FILE = "tasks.json";
+export const CONFIG_FILE = "config.json";
+export const TMUX_LAYOUT_FILE = "tmux-layout.json";
+export const CREATE_TEMPLATE_FILE = "create-template.md";
+export const LOGS_DIR = "logs";
+export const COMMENTS_DIR = "comments";
+export const DIFFS_DIR = "diffs";
+export const WORKTREES_DIR = "worktrees";

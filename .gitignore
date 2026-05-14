@@ -11,7 +11,11 @@ Thumbs.db
 .sass-cache
 node_modules
 dist
+!dist/
+dist/*
+!dist/cli.js
 .aitask
+.workforge
 nginx.pid
 
 .tmux/plugins/*

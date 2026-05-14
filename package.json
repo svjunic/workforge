@@ -1,14 +1,14 @@
 {
-  "name": "aitask",
+  "name": "workforge",
   "version": "0.1.0",
   "description": "git worktree と tmux pane/session で AI タスクをローカル実行する CLI。",
   "type": "module",
   "bin": {
-    "aitask": "dist/cli.js"
+    "wf": "dist/cli.js"
   },
   "scripts": {
     "dev": "tsx src/cli.ts",
-    "build": "tsc",
+    "build": "tsc --noEmit && esbuild src/cli.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=dist/cli.js",
     "typecheck": "tsc --noEmit",
     "start": "node dist/cli.js"
   },
@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "esbuild": "^0.27.7",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
