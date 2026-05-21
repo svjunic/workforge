@@ -1,6 +1,6 @@
 import { AgentSchema, SUPPORTED_AGENTS } from "./schemas.js";
 import { shellQuote } from "./system.js";
-import type { AgentAdapter, AgentName, Config, Task } from "./types.js";
+import type { AgentAdapter, AgentName, Config, Task, TmuxShellMode } from "./types.js";
 import { CliError } from "./errors.js";
 
 const adapters: Record<AgentName, AgentAdapter> = {
@@ -55,9 +55,13 @@ export function buildAgentPrompt(task: Task, isResume: boolean): string {
   return lines.join("\n");
 }
 
-export function buildTmuxShellCommand(adapter: AgentAdapter, prompt: string, logPath: string, keepPaneOnDone: boolean): string {
+export function buildTmuxShellCommand(adapter: AgentAdapter, prompt: string, logPath: string, keepPaneOnDone: boolean, shellMode: TmuxShellMode): string {
   const command = [adapter.command, ...adapter.args, prompt].map(shellQuote).join(" ");
   const logCommand = `tmux pipe-pane -o ${shellQuote(`cat >> ${logPath}`)}`;
-  const suffix = keepPaneOnDone ? "; printf '\\n[workforge] プロセスが終了しました。この tmux pane/session を閉じるには Ctrl-D を押してください。\\n'; exec $SHELL" : "";
-  return `${logCommand}; ${command}${suffix}`;
+  const shell = process.env.SHELL || "/bin/sh";
+  const suffix = keepPaneOnDone ? `; printf '\\n[workforge] プロセスが終了しました。この tmux pane/session を閉じるには Ctrl-D を押してください。\\n'; exec ${shellQuote(shell)}` : "";
+  const innerCommand = `${logCommand}; ${command}${suffix}`;
+  return shellMode === "loginInteractive"
+    ? `${shellQuote(shell)} -lic ${shellQuote(innerCommand)}`
+    : innerCommand;
 }

@@ -130,7 +130,7 @@ wf delete <taskId>
 
 ### `wf run [taskId] [--agent claude|codex|aider|copilot]`
 
-在任务 worktree 中用 tmux 启动选定的 adapter。省略 `taskId` 时，WorkForge 会用 `fzf` 或编号输入选择未删除任务。从 tmux 内运行时，会在当前 window 中创建新 pane。从 tmux 外运行时，会创建任务专用 session。`--agent` 优先于 `.workforge/config.json` 中的 `defaultAgent`。任务状态会变为 `running`。
+在任务 worktree 中用 tmux 启动选定的 adapter。省略 `taskId` 时，WorkForge 会用 `fzf` 或编号输入选择未删除任务；`fzf` 候选列表会显示在屏幕上方。从 tmux 内运行时，会在当前 window 中创建新 pane。从 tmux 外运行时，会创建任务专用 session。`--agent` 优先于 `.workforge/config.json` 中的 `defaultAgent`。任务状态会变为 `running`。
 
 各 agent 的启动行为:
 
@@ -141,29 +141,29 @@ wf delete <taskId>
 
 WorkForge 会在任务标题和描述之外追加自己的指令，然后再把合成后的 prompt 传给各 adapter: 只在当前 git worktree 中工作，不要修改 main worktree，并完成从实现到验证的全过程。
 
-### `wf stop <taskId>`
+### `wf stop [taskId]`
 
-向任务的 tmux pane/session 发送 `Ctrl-C`，并将任务状态设为 `stopped`。
+向任务的 tmux pane/session 发送 `Ctrl-C`，并将任务状态设为 `stopped`。省略 `taskId` 时，WorkForge 会用 `fzf` 或编号输入选择未删除任务。
 
-### `wf resume <taskId>`
+### `wf resume [taskId]`
 
-在同一个 worktree 中重新启动 adapter，并将任务状态设为 `running`。Claude 使用 `--permission-mode auto`。Aider 再次使用 `--architect`。Copilot 再次使用 `--mode plan -i`。Codex 不添加额外 mode 参数。
+在同一个 worktree 中重新启动 adapter，并将任务状态设为 `running`。省略 `taskId` 时，WorkForge 会用 `fzf` 或编号输入选择未删除任务。Claude 使用 `--permission-mode auto`。Aider 再次使用 `--architect`。Copilot 再次使用 `--mode plan -i`。Codex 不添加额外 mode 参数。
 
-### `wf diff <taskId>`
+### `wf diff [taskId]`
 
-显示任务 worktree 的 diff，并保存到 `.workforge/diffs/<taskId>.patch`。任务状态会变为 `review`。
+显示任务 worktree 的 diff，并保存到 `.workforge/diffs/<taskId>.patch`。省略 `taskId` 时，WorkForge 会用 `fzf` 或编号输入选择未删除任务。任务状态会变为 `review`。
 
-### `wf comment <taskId> <text>`
+### `wf comment [taskId] [text] [--text <text>]`
 
-向 `.workforge/comments/<taskId>.jsonl` 追加评论。
+向 `.workforge/comments/<taskId>.jsonl` 追加评论。原有的 `wf comment <taskId> <text>` 仍然可用。如需交互式选择任务，请省略 `taskId` 并用 `--text` 传入评论正文。
 
-### `wf log <taskId>`
+### `wf log [taskId]`
 
-输出 `.workforge/logs/<taskId>.log` 中保存的 tmux 日志。
+输出 `.workforge/logs/<taskId>.log` 中保存的 tmux 日志。省略 `taskId` 时，WorkForge 会用 `fzf` 或编号输入选择未删除任务。
 
 ### `wf delete [taskId] [--force] [--all]`
 
-删除任务 worktree，并将任务状态设为 `deleted`。省略 `taskId` 时，WorkForge 会用 `fzf` 或编号输入选择未删除任务。`--all` 会在确认后删除所有未删除任务。如果 `git worktree remove` 失败且你确认要删除，请加上 `--force` 重新执行。
+删除任务 worktree，并将任务状态设为 `deleted`。省略 `taskId` 时，WorkForge 会用 `fzf` 或编号输入选择未删除任务；`fzf` 候选列表会显示在屏幕上方。`--all` 会在确认后删除所有未删除任务。如果 `git worktree remove` 失败且你确认要删除，请加上 `--force` 重新执行。
 
 ## `.workforge/config.json`
 
@@ -175,13 +175,16 @@ WorkForge 会在任务标题和描述之外追加自己的指令，然后再把�
   "worktreeRoot": ".workforge/worktrees",
   "tmuxSessionPrefix": "workforge",
   "keepPaneOnDone": true,
-  "tmuxPanePlacement": "rightColumnPairs"
+  "tmuxPanePlacement": "rightColumnPairs",
+  "tmuxShellMode": "loginInteractive"
 }
 ```
 
 `defaultAgent` 可以是 `claude`、`codex`、`aider` 或 `copilot`。
 
 `tmuxPanePlacement` 可以是 `rightColumnPairs` 或 `default`。`rightColumnPairs` 在 tmux 内执行 `run` / `resume` 时，会先在右侧创建 pane，再在其下方创建下一个 pane，并重复这个模式。`default` 交给 tmux 默认 split 行为处理。从 tmux 外创建任务专用 session 时，不使用此设置。
+
+`tmuxShellMode` 可以是 `loginInteractive` 或 `direct`。`loginInteractive` 会通过 `$SHELL -lic` 启动 adapter，因此通过 shell startup files 设置的 Node.js、nvm、asdf、mise 等 PATH 会被反映出来。`direct` 保持以前的行为，直接把 adapter 命令交给 tmux。
 
 ## create 模板
 

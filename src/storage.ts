@@ -102,6 +102,7 @@ export function defaultConfig(): Config {
     worktreeRoot: ".workforge/worktrees",
     tmuxSessionPrefix: "workforge",
     keepPaneOnDone: true,
-    tmuxPanePlacement: "rightColumnPairs"
+    tmuxPanePlacement: "rightColumnPairs",
+    tmuxShellMode: "loginInteractive"
   };
 }

@@ -66,7 +66,7 @@ async function selectTaskIdWithFzf(prompt: string, tasks: Task[]): Promise<strin
   if (!process.stdin.isTTY || !process.stdout.isTTY || !await commandExists("fzf")) return undefined;
 
   const input = `${tasks.map(formatTaskChoice).join("\n")}\n`;
-  const selected = await execa("fzf", ["--prompt", `${prompt}> `], {
+  const selected = await execa("fzf", ["--layout=reverse", "--prompt", `${prompt}> `], {
     input,
     stderr: "inherit",
     reject: false

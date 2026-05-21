@@ -4,6 +4,7 @@ import type { AgentSchema } from "./schemas.js";
 
 export type AgentName = z.infer<typeof AgentSchema>;
 export type TmuxPanePlacement = "default" | "rightColumnPairs";
+export type TmuxShellMode = "loginInteractive" | "direct";
 export type TaskStatus = "created" | "running" | "stopped" | "review" | "deleted";
 export type TmuxTargetType = "session" | "window" | "pane";
 
@@ -13,6 +14,7 @@ export interface Config {
   tmuxSessionPrefix: string;
   keepPaneOnDone: boolean;
   tmuxPanePlacement: TmuxPanePlacement;
+  tmuxShellMode: TmuxShellMode;
 }
 
 export interface TmuxLayout {

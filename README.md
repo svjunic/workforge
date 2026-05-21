@@ -130,7 +130,7 @@ Shows task details and tmux status. When `taskId` is omitted, shows a compact ta
 
 ### `wf run [taskId] [--agent claude|codex|aider|copilot]`
 
-Starts the selected adapter in tmux inside the task worktree. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task. When run from inside tmux, WorkForge creates a new pane in the current window. When run outside tmux, it creates a dedicated task session. `--agent` overrides `defaultAgent` in `.workforge/config.json`. The task status becomes `running`.
+Starts the selected adapter in tmux inside the task worktree. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task; the `fzf` candidate list is shown at the top of the screen. When run from inside tmux, WorkForge creates a new pane in the current window. When run outside tmux, it creates a dedicated task session. `--agent` overrides `defaultAgent` in `.workforge/config.json`. The task status becomes `running`.
 
 Agent-specific startup behavior:
 
@@ -141,29 +141,29 @@ Agent-specific startup behavior:
 
 WorkForge appends its own instructions to the task title and description before sending the prompt to each adapter: work only inside this git worktree, do not modify the main worktree, and complete implementation through verification.
 
-### `wf stop <taskId>`
+### `wf stop [taskId]`
 
-Sends `Ctrl-C` to the task tmux pane or session and sets the task status to `stopped`.
+Sends `Ctrl-C` to the task tmux pane or session and sets the task status to `stopped`. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task.
 
-### `wf resume <taskId>`
+### `wf resume [taskId]`
 
-Restarts the adapter in the same worktree and sets the task status to `running`. Claude starts with `--permission-mode auto`. Aider starts with `--architect` again. Copilot starts with `--mode plan -i` again. Codex starts without extra mode flags.
+Restarts the adapter in the same worktree and sets the task status to `running`. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task. Claude starts with `--permission-mode auto`. Aider starts with `--architect` again. Copilot starts with `--mode plan -i` again. Codex starts without extra mode flags.
 
-### `wf diff <taskId>`
+### `wf diff [taskId]`
 
-Shows the task worktree diff and saves it to `.workforge/diffs/<taskId>.patch`. The task status becomes `review`.
+Shows the task worktree diff and saves it to `.workforge/diffs/<taskId>.patch`. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task. The task status becomes `review`.
 
-### `wf comment <taskId> <text>`
+### `wf comment [taskId] [text] [--text <text>]`
 
-Appends a comment to `.workforge/comments/<taskId>.jsonl`.
+Appends a comment to `.workforge/comments/<taskId>.jsonl`. The existing `wf comment <taskId> <text>` form is supported. To select the task interactively, omit `taskId` and pass the comment with `--text`.
 
-### `wf log <taskId>`
+### `wf log [taskId]`
 
-Prints the saved tmux log from `.workforge/logs/<taskId>.log`.
+Prints the saved tmux log from `.workforge/logs/<taskId>.log`. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task.
 
 ### `wf delete [taskId] [--force] [--all]`
 
-Removes a task worktree and sets the task status to `deleted`. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task. `--all` deletes every non-deleted task after a confirmation prompt. If `git worktree remove` fails and the removal is intentional, rerun with `--force`.
+Removes a task worktree and sets the task status to `deleted`. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task; the `fzf` candidate list is shown at the top of the screen. `--all` deletes every non-deleted task after a confirmation prompt. If `git worktree remove` fails and the removal is intentional, rerun with `--force`.
 
 ## `.workforge/config.json`
 
@@ -175,13 +175,16 @@ Removes a task worktree and sets the task status to `deleted`. When `taskId` is 
   "worktreeRoot": ".workforge/worktrees",
   "tmuxSessionPrefix": "workforge",
   "keepPaneOnDone": true,
-  "tmuxPanePlacement": "rightColumnPairs"
+  "tmuxPanePlacement": "rightColumnPairs",
+  "tmuxShellMode": "loginInteractive"
 }
 ```
 
 `defaultAgent` can be `claude`, `codex`, `aider`, or `copilot`.
 
 `tmuxPanePlacement` can be `rightColumnPairs` or `default`. `rightColumnPairs` creates the first pane on the right, the next one below it, and repeats that pattern when `run` or `resume` is invoked from inside tmux. `default` leaves splitting to tmux defaults. This setting is not used when WorkForge creates a dedicated task session outside tmux.
+
+`tmuxShellMode` can be `loginInteractive` or `direct`. `loginInteractive` starts the adapter through `$SHELL -lic`, so shell startup files can set PATH for tools such as Node.js, nvm, asdf, or mise. `direct` keeps the previous behavior and passes the adapter command directly to tmux.
 
 ## Create Template
 

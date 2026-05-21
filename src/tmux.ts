@@ -81,18 +81,22 @@ async function startRightColumnPairPane(ctx: RepoContext, task: Task, shellComma
     if (!started.failed) {
       layout.windows[current.windowKey] = { anchorPaneId: state.anchorPaneId };
       await saveTmuxLayout(ctx, layout);
+      return started;
     }
-    return started;
   }
 
   const anchorPaneId = state?.anchorPaneId && await tmuxPaneExists(state.anchorPaneId)
     ? state.anchorPaneId
     : current.paneId;
-  const started = await splitTmuxPane(["split-window", "-h", "-t", anchorPaneId], task, shellCommand);
+  let started = await splitTmuxPane(["split-window", "-h", "-t", anchorPaneId], task, shellCommand);
+  const savedAnchorWasStale = started.failed && anchorPaneId !== current.paneId;
+  if (savedAnchorWasStale) {
+    started = await splitTmuxPane(["split-window", "-h", "-t", current.paneId], task, shellCommand);
+  }
   if (!started.failed) {
     const paneId = started.stdout.trim().split("\t")[1];
     layout.windows[current.windowKey] = {
-      anchorPaneId,
+      anchorPaneId: savedAnchorWasStale ? current.paneId : anchorPaneId,
       ...(paneId ? { pendingTopPaneId: paneId } : {})
     };
     await saveTmuxLayout(ctx, layout);

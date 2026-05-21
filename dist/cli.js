@@ -13,12 +13,14 @@ import { z } from "zod";
 var SUPPORTED_AGENTS = ["claude", "codex", "aider", "copilot"];
 var AgentSchema = z.enum(SUPPORTED_AGENTS);
 var TmuxPanePlacementSchema = z.enum(["default", "rightColumnPairs"]);
+var TmuxShellModeSchema = z.enum(["loginInteractive", "direct"]);
 var ConfigSchema = z.object({
   defaultAgent: AgentSchema.default("claude"),
   worktreeRoot: z.string().default(".workforge/worktrees"),
   tmuxSessionPrefix: z.string().default("workforge"),
   keepPaneOnDone: z.boolean().default(true),
-  tmuxPanePlacement: TmuxPanePlacementSchema.default("rightColumnPairs")
+  tmuxPanePlacement: TmuxPanePlacementSchema.default("rightColumnPairs"),
+  tmuxShellMode: TmuxShellModeSchema.default("loginInteractive")
 });
 var TmuxLayoutSchema = z.object({
   windows: z.record(z.object({
@@ -115,11 +117,13 @@ function buildAgentPrompt(task, isResume) {
   if (task.description) lines.splice(2, 0, task.description, "");
   return lines.join("\n");
 }
-function buildTmuxShellCommand(adapter, prompt, logPath, keepPaneOnDone) {
+function buildTmuxShellCommand(adapter, prompt, logPath, keepPaneOnDone, shellMode) {
   const command = [adapter.command, ...adapter.args, prompt].map(shellQuote).join(" ");
   const logCommand = `tmux pipe-pane -o ${shellQuote(`cat >> ${logPath}`)}`;
-  const suffix = keepPaneOnDone ? "; printf '\\n[workforge] \u30D7\u30ED\u30BB\u30B9\u304C\u7D42\u4E86\u3057\u307E\u3057\u305F\u3002\u3053\u306E tmux pane/session \u3092\u9589\u3058\u308B\u306B\u306F Ctrl-D \u3092\u62BC\u3057\u3066\u304F\u3060\u3055\u3044\u3002\\n'; exec $SHELL" : "";
-  return `${logCommand}; ${command}${suffix}`;
+  const shell = process.env.SHELL || "/bin/sh";
+  const suffix = keepPaneOnDone ? `; printf '\\n[workforge] \u30D7\u30ED\u30BB\u30B9\u304C\u7D42\u4E86\u3057\u307E\u3057\u305F\u3002\u3053\u306E tmux pane/session \u3092\u9589\u3058\u308B\u306B\u306F Ctrl-D \u3092\u62BC\u3057\u3066\u304F\u3060\u3055\u3044\u3002\\n'; exec ${shellQuote(shell)}` : "";
+  const innerCommand = `${logCommand}; ${command}${suffix}`;
+  return shellMode === "loginInteractive" ? `${shellQuote(shell)} -lic ${shellQuote(innerCommand)}` : innerCommand;
 }
 
 // src/constants.ts
@@ -350,7 +354,8 @@ function defaultConfig() {
     worktreeRoot: ".workforge/worktrees",
     tmuxSessionPrefix: "workforge",
     keepPaneOnDone: true,
-    tmuxPanePlacement: "rightColumnPairs"
+    tmuxPanePlacement: "rightColumnPairs",
+    tmuxShellMode: "loginInteractive"
   };
 }
 
@@ -400,7 +405,7 @@ async function selectTaskIdWithFzf(prompt, tasks) {
   if (!process.stdin.isTTY || !process.stdout.isTTY || !await commandExists("fzf")) return void 0;
   const input = `${tasks.map(formatTaskChoice).join("\n")}
 `;
-  const selected = await execa4("fzf", ["--prompt", `${prompt}> `], {
+  const selected = await execa4("fzf", ["--layout=reverse", "--prompt", `${prompt}> `], {
     input,
     stderr: "inherit",
     reject: false
@@ -501,15 +506,19 @@ async function startRightColumnPairPane(ctx, task, shellCommand) {
     if (!started2.failed) {
       layout.windows[current.windowKey] = { anchorPaneId: state.anchorPaneId };
       await saveTmuxLayout(ctx, layout);
+      return started2;
     }
-    return started2;
   }
   const anchorPaneId = state?.anchorPaneId && await tmuxPaneExists(state.anchorPaneId) ? state.anchorPaneId : current.paneId;
-  const started = await splitTmuxPane(["split-window", "-h", "-t", anchorPaneId], task, shellCommand);
+  let started = await splitTmuxPane(["split-window", "-h", "-t", anchorPaneId], task, shellCommand);
+  const savedAnchorWasStale = started.failed && anchorPaneId !== current.paneId;
+  if (savedAnchorWasStale) {
+    started = await splitTmuxPane(["split-window", "-h", "-t", current.paneId], task, shellCommand);
+  }
   if (!started.failed) {
     const paneId = started.stdout.trim().split("	")[1];
     layout.windows[current.windowKey] = {
-      anchorPaneId,
+      anchorPaneId: savedAnchorWasStale ? current.paneId : anchorPaneId,
       ...paneId ? { pendingTopPaneId: paneId } : {}
     };
     await saveTmuxLayout(ctx, layout);
@@ -637,11 +646,11 @@ function buildProgram() {
     const taskId2 = id ?? await selectTaskIdFromRepo("\u5B9F\u884C\u3059\u308B\u30BF\u30B9\u30AF\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
     await runTask(taskId2, options.agent, false);
   });
-  program.command("stop").argument("<taskId>", "\u30BF\u30B9\u30AFID").description("\u5B9F\u884C\u4E2D\u306E\u30BF\u30B9\u30AF\u3092\u505C\u6B62\u3057\u307E\u3059\u3002").action(async (id) => {
+  program.command("stop").argument("[taskId]", "\u30BF\u30B9\u30AFID").description("\u5B9F\u884C\u4E2D\u306E\u30BF\u30B9\u30AF\u3092\u505C\u6B62\u3057\u307E\u3059\u3002").action(async (id) => {
     const ctx = await loadRepoContext();
     await ensureInitialized(ctx);
     const tasks = await loadTasks(ctx);
-    const task = findTask(tasks.tasks, id);
+    const task = findTask(tasks.tasks, id ?? await selectTaskId("\u505C\u6B62\u3059\u308B\u30BF\u30B9\u30AF\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044", tasks.tasks));
     if (await tmuxTargetExists(task)) {
       await execa6("tmux", ["send-keys", "-t", tmuxTargetForTask(task), "C-c"]);
     }
@@ -649,14 +658,15 @@ function buildProgram() {
     await saveTasks(ctx, tasks);
     console.log(`\u505C\u6B62\u3057\u307E\u3057\u305F: ${task.id}`);
   });
-  program.command("resume").argument("<taskId>", "\u30BF\u30B9\u30AFID").description("\u505C\u6B62\u3057\u305F\u30BF\u30B9\u30AF\u306E\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u3092\u518D\u8D77\u52D5\u3057\u307E\u3059\u3002").action(async (id) => {
-    await runTask(id, void 0, true);
+  program.command("resume").argument("[taskId]", "\u30BF\u30B9\u30AFID").description("\u505C\u6B62\u3057\u305F\u30BF\u30B9\u30AF\u306E\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u3092\u518D\u8D77\u52D5\u3057\u307E\u3059\u3002").action(async (id) => {
+    const taskId2 = id ?? await selectTaskIdFromRepo("\u518D\u958B\u3059\u308B\u30BF\u30B9\u30AF\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+    await runTask(taskId2, void 0, true);
   });
-  program.command("diff").argument("<taskId>", "\u30BF\u30B9\u30AFID").description("\u30BF\u30B9\u30AF worktree \u306E\u5DEE\u5206\u3092\u8868\u793A\u3057\u3066\u4FDD\u5B58\u3057\u307E\u3059\u3002").action(async (id) => {
+  program.command("diff").argument("[taskId]", "\u30BF\u30B9\u30AFID").description("\u30BF\u30B9\u30AF worktree \u306E\u5DEE\u5206\u3092\u8868\u793A\u3057\u3066\u4FDD\u5B58\u3057\u307E\u3059\u3002").action(async (id) => {
     const ctx = await loadRepoContext();
     await ensureInitialized(ctx);
     const tasks = await loadTasks(ctx);
-    const task = findTask(tasks.tasks, id);
+    const task = findTask(tasks.tasks, id ?? await selectTaskId("\u5DEE\u5206\u3092\u8868\u793A\u3059\u308B\u30BF\u30B9\u30AF\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044", tasks.tasks));
     const diff = await gitAt(task.worktreePath, ["diff"], { reject: false });
     const stdout = typeof diff.stdout === "string" ? diff.stdout : "";
     const diffPath = path5.join(ctx.workforgeDir, DIFFS_DIR, `${task.id}.patch`);
@@ -666,22 +676,24 @@ function buildProgram() {
     process.stdout.write(stdout);
     console.error(`\u5DEE\u5206\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F: ${diffPath}`);
   });
-  program.command("comment").argument("<taskId>", "\u30BF\u30B9\u30AFID").argument("<text>", "\u30B3\u30E1\u30F3\u30C8\u672C\u6587").description("\u30BF\u30B9\u30AF\u30B3\u30E1\u30F3\u30C8\u3092\u8FFD\u8A18\u3057\u307E\u3059\u3002").action(async (id, text) => {
+  program.command("comment").argument("[taskId]", "\u30BF\u30B9\u30AFID").argument("[text]", "\u30B3\u30E1\u30F3\u30C8\u672C\u6587").option("--text <text>", "\u30B3\u30E1\u30F3\u30C8\u672C\u6587\u3002taskId \u7701\u7565\u6642\u306F\u3053\u306E option \u3092\u6307\u5B9A\u3057\u307E\u3059").description("\u30BF\u30B9\u30AF\u30B3\u30E1\u30F3\u30C8\u3092\u8FFD\u8A18\u3057\u307E\u3059\u3002").action(async (id, text, options) => {
     const ctx = await loadRepoContext();
     await ensureInitialized(ctx);
     const tasks = await loadTasks(ctx);
-    const task = findTask(tasks.tasks, id);
+    const commentText = text ?? options.text;
+    if (!commentText) throw new CliError("\u30B3\u30E1\u30F3\u30C8\u672C\u6587\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002taskId \u3092\u7701\u7565\u3059\u308B\u5834\u5408\u306F --text \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044\u3002");
+    const task = findTask(tasks.tasks, id ?? await selectTaskId("\u30B3\u30E1\u30F3\u30C8\u3059\u308B\u30BF\u30B9\u30AF\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044", tasks.tasks));
     const commentPath = path5.join(ctx.workforgeDir, COMMENTS_DIR, `${task.id}.jsonl`);
-    const record = JSON.stringify({ taskId: task.id, text, createdAt: (/* @__PURE__ */ new Date()).toISOString() });
+    const record = JSON.stringify({ taskId: task.id, text: commentText, createdAt: (/* @__PURE__ */ new Date()).toISOString() });
     await appendFile(commentPath, `${record}
 `, "utf8");
     console.log(`\u30B3\u30E1\u30F3\u30C8\u3092\u8FFD\u52A0\u3057\u307E\u3057\u305F: ${task.id}`);
   });
-  program.command("log").argument("<taskId>", "\u30BF\u30B9\u30AFID").description("\u4FDD\u5B58\u6E08\u307F\u306E tmux \u30ED\u30B0\u3092\u8868\u793A\u3057\u307E\u3059\u3002").action(async (id) => {
+  program.command("log").argument("[taskId]", "\u30BF\u30B9\u30AFID").description("\u4FDD\u5B58\u6E08\u307F\u306E tmux \u30ED\u30B0\u3092\u8868\u793A\u3057\u307E\u3059\u3002").action(async (id) => {
     const ctx = await loadRepoContext();
     await ensureInitialized(ctx);
     const tasks = await loadTasks(ctx);
-    const task = findTask(tasks.tasks, id);
+    const task = findTask(tasks.tasks, id ?? await selectTaskId("\u30ED\u30B0\u3092\u8868\u793A\u3059\u308B\u30BF\u30B9\u30AF\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044", tasks.tasks));
     const logPath = path5.join(ctx.workforgeDir, LOGS_DIR, `${task.id}.log`);
     try {
       process.stdout.write(await readFile3(logPath, "utf8"));
@@ -732,10 +744,10 @@ async function runTask(id, agentOption, isResume) {
   if (task.status === "deleted") throw new CliError(`\u30BF\u30B9\u30AF ${task.id} \u306F\u524A\u9664\u6E08\u307F\u3067\u3059\u3002`);
   const agent = resolveAgent(agentOption, config);
   const adapter = buildAgentAdapter(agent, isResume);
-  await ensureCommand(adapter.command, `${agent} adapter \u3092\u4F7F\u3046\u306B\u306F ${adapter.command} \u304C\u5FC5\u8981\u3067\u3059\u3002`);
+  await ensureAdapterCommand(adapter.command, config.tmuxShellMode, `${agent} adapter \u3092\u4F7F\u3046\u306B\u306F ${adapter.command} \u304C\u5FC5\u8981\u3067\u3059\u3002`);
   const logPath = path5.join(ctx.workforgeDir, LOGS_DIR, `${task.id}.log`);
   const prompt = buildAgentPrompt(task, isResume);
-  const shellCommand = buildTmuxShellCommand(adapter, prompt, logPath, config.keepPaneOnDone);
+  const shellCommand = buildTmuxShellCommand(adapter, prompt, logPath, config.keepPaneOnDone, config.tmuxShellMode);
   if (await tmuxTargetExists(task)) {
     await killTmuxTarget(task);
   }
@@ -768,8 +780,22 @@ async function promptConfig() {
       "tmuxPanePlacement",
       ["rightColumnPairs", "default"],
       defaults.tmuxPanePlacement
+    ),
+    tmuxShellMode: await selectOption(
+      "tmuxShellMode",
+      ["loginInteractive", "direct"],
+      defaults.tmuxShellMode
     )
   };
+}
+async function ensureAdapterCommand(command, shellMode, message) {
+  if (shellMode === "direct") {
+    await ensureCommand(command, message);
+    return;
+  }
+  const shell = process.env.SHELL || "/bin/sh";
+  const result = await execa6(shell, ["-lic", `command -v ${shellQuote(command)} >/dev/null`], { reject: false });
+  if (result.failed) throw new CliError(message);
 }
 async function selectOption(name, choices, defaultValue) {
   ensureInteractivePrompt();

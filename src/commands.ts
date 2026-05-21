@@ -12,7 +12,7 @@ import { ensureBaseBranch, ensureInitialCommit, git, gitAt, loadRepoContext } fr
 import { copyLocalAiSettings } from "./local-settings.js";
 import { SUPPORTED_AGENTS } from "./schemas.js";
 import { defaultConfig, ensureInitialized, ensureWorkforgeFiles, loadConfig, loadTasks, saveTasks, writeJson } from "./storage.js";
-import { ensureCommand } from "./system.js";
+import { ensureCommand, shellQuote } from "./system.js";
 import {
   confirmPrompt,
   findTask,
@@ -25,7 +25,7 @@ import {
 } from "./tasks.js";
 import { resolveCreateInput } from "./template.js";
 import { killTmuxTarget, startTmuxTask, tmuxTargetExists, tmuxTargetForTask } from "./tmux.js";
-import type { Config, RepoContext, Task, TmuxPanePlacement } from "./types.js";
+import type { Config, RepoContext, Task, TmuxPanePlacement, TmuxShellMode } from "./types.js";
 
 const taskId = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 8);
 
@@ -165,13 +165,13 @@ export function buildProgram() {
 
   program
     .command("stop")
-    .argument("<taskId>", "タスクID")
+    .argument("[taskId]", "タスクID")
     .description("実行中のタスクを停止します。")
-    .action(async (id: string) => {
+    .action(async (id: string | undefined) => {
       const ctx = await loadRepoContext();
       await ensureInitialized(ctx);
       const tasks = await loadTasks(ctx);
-      const task = findTask(tasks.tasks, id);
+      const task = findTask(tasks.tasks, id ?? await selectTaskId("停止するタスクを選択してください", tasks.tasks));
 
       if (await tmuxTargetExists(task)) {
         await execa("tmux", ["send-keys", "-t", tmuxTargetForTask(task), "C-c"]);
@@ -184,21 +184,22 @@ export function buildProgram() {
 
   program
     .command("resume")
-    .argument("<taskId>", "タスクID")
+    .argument("[taskId]", "タスクID")
     .description("停止したタスクのエージェントを再起動します。")
-    .action(async (id: string) => {
-      await runTask(id, undefined, true);
+    .action(async (id: string | undefined) => {
+      const taskId = id ?? await selectTaskIdFromRepo("再開するタスクを選択してください");
+      await runTask(taskId, undefined, true);
     });
 
   program
     .command("diff")
-    .argument("<taskId>", "タスクID")
+    .argument("[taskId]", "タスクID")
     .description("タスク worktree の差分を表示して保存します。")
-    .action(async (id: string) => {
+    .action(async (id: string | undefined) => {
       const ctx = await loadRepoContext();
       await ensureInitialized(ctx);
       const tasks = await loadTasks(ctx);
-      const task = findTask(tasks.tasks, id);
+      const task = findTask(tasks.tasks, id ?? await selectTaskId("差分を表示するタスクを選択してください", tasks.tasks));
       const diff = await gitAt(task.worktreePath, ["diff"], { reject: false });
       const stdout = typeof diff.stdout === "string" ? diff.stdout : "";
       const diffPath = path.join(ctx.workforgeDir, DIFFS_DIR, `${task.id}.patch`);
@@ -211,29 +212,32 @@ export function buildProgram() {
 
   program
     .command("comment")
-    .argument("<taskId>", "タスクID")
-    .argument("<text>", "コメント本文")
+    .argument("[taskId]", "タスクID")
+    .argument("[text]", "コメント本文")
+    .option("--text <text>", "コメント本文。taskId 省略時はこの option を指定します")
     .description("タスクコメントを追記します。")
-    .action(async (id: string, text: string) => {
+    .action(async (id: string | undefined, text: string | undefined, options: { text?: string }) => {
       const ctx = await loadRepoContext();
       await ensureInitialized(ctx);
       const tasks = await loadTasks(ctx);
-      const task = findTask(tasks.tasks, id);
+      const commentText = text ?? options.text;
+      if (!commentText) throw new CliError("コメント本文を指定してください。taskId を省略する場合は --text を使ってください。");
+      const task = findTask(tasks.tasks, id ?? await selectTaskId("コメントするタスクを選択してください", tasks.tasks));
       const commentPath = path.join(ctx.workforgeDir, COMMENTS_DIR, `${task.id}.jsonl`);
-      const record = JSON.stringify({ taskId: task.id, text, createdAt: new Date().toISOString() });
+      const record = JSON.stringify({ taskId: task.id, text: commentText, createdAt: new Date().toISOString() });
       await appendFile(commentPath, `${record}\n`, "utf8");
       console.log(`コメントを追加しました: ${task.id}`);
     });
 
   program
     .command("log")
-    .argument("<taskId>", "タスクID")
+    .argument("[taskId]", "タスクID")
     .description("保存済みの tmux ログを表示します。")
-    .action(async (id: string) => {
+    .action(async (id: string | undefined) => {
       const ctx = await loadRepoContext();
       await ensureInitialized(ctx);
       const tasks = await loadTasks(ctx);
-      const task = findTask(tasks.tasks, id);
+      const task = findTask(tasks.tasks, id ?? await selectTaskId("ログを表示するタスクを選択してください", tasks.tasks));
       const logPath = path.join(ctx.workforgeDir, LOGS_DIR, `${task.id}.log`);
       try {
         process.stdout.write(await readFile(logPath, "utf8"));
@@ -301,11 +305,11 @@ async function runTask(id: string, agentOption: string | undefined, isResume: bo
 
   const agent = resolveAgent(agentOption, config);
   const adapter = buildAgentAdapter(agent, isResume);
-  await ensureCommand(adapter.command, `${agent} adapter を使うには ${adapter.command} が必要です。`);
+  await ensureAdapterCommand(adapter.command, config.tmuxShellMode, `${agent} adapter を使うには ${adapter.command} が必要です。`);
 
   const logPath = path.join(ctx.workforgeDir, LOGS_DIR, `${task.id}.log`);
   const prompt = buildAgentPrompt(task, isResume);
-  const shellCommand = buildTmuxShellCommand(adapter, prompt, logPath, config.keepPaneOnDone);
+  const shellCommand = buildTmuxShellCommand(adapter, prompt, logPath, config.keepPaneOnDone, config.tmuxShellMode);
 
   if (await tmuxTargetExists(task)) {
     await killTmuxTarget(task);
@@ -343,8 +347,24 @@ async function promptConfig(): Promise<Config> {
       "tmuxPanePlacement",
       ["rightColumnPairs", "default"],
       defaults.tmuxPanePlacement
+    ),
+    tmuxShellMode: await selectOption<TmuxShellMode>(
+      "tmuxShellMode",
+      ["loginInteractive", "direct"],
+      defaults.tmuxShellMode
     )
   };
+}
+
+async function ensureAdapterCommand(command: string, shellMode: TmuxShellMode, message: string) {
+  if (shellMode === "direct") {
+    await ensureCommand(command, message);
+    return;
+  }
+
+  const shell = process.env.SHELL || "/bin/sh";
+  const result = await execa(shell, ["-lic", `command -v ${shellQuote(command)} >/dev/null`], { reject: false });
+  if (result.failed) throw new CliError(message);
 }
 
 async function selectOption<T extends string>(name: string, choices: readonly T[], defaultValue: T): Promise<T> {
