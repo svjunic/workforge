@@ -28,9 +28,16 @@ MVP では自動 merge は行わず、1タスクにつき 1ブランチ、1 work
   - `taskId` 省略時の選択 UI に使います。
   - 未インストールの場合は番号入力に fallback します。
 - `VISUAL` または `EDITOR` (任意)
-  - `wf create` で title を省略したときのエディタ入力に使います。
+  - `wf create` で title を省略したときだけ使います。
+  - `VISUAL` が `EDITOR` より優先されます。
+  - `vim`、`nano`、`code` など、`PATH` から実行できるエディタコマンドを指定します。
 
-`tmux`、`claude`、`codex`、`aider`、`copilot`、`fzf` は `workforge` ではインストールしません。使うものは事前に PATH から実行できる状態にしてください。エディタ入力を使う場合は `VISUAL` または `EDITOR` を設定してください。
+`tmux`、`claude`、`codex`、`aider`、`copilot`、`fzf` は `workforge` ではインストールしません。使うものは事前に PATH から実行できる状態にしてください。Markdown テンプレートをエディタで編集してタスクを作りたい場合は、`VISUAL` または `EDITOR` を設定してください。
+
+```bash
+export VISUAL=vim
+wf create
+```
 
 ## インストール
 
@@ -111,7 +118,7 @@ wf delete <taskId>
 
 `main` から `workforge/<id>-<slug>` ブランチを作成し、`.workforge/worktrees/<id>` に worktree を作ります。タスク状態は `created` になります。
 
-`title` を省略すると、`VISUAL` または `EDITOR` のエディタで Markdown テンプレートを開きます。編集後、最初の H1 をタスクタイトル、本文全体をタスク説明として保存します。title 省略時は `--description` を同時指定できません。
+`title` を省略すると、`VISUAL` または `EDITOR` に設定されたエディタで `.workforge/create-template.md` を開きます。`VISUAL` が優先され、どちらも未設定の場合はエラーになります。編集後、最初の Markdown H1 をタスクタイトル、本文全体をタスク説明として保存します。title 省略時は `--description` を同時指定できません。コマンドラインで `title` を指定した場合、エディタは起動しません。
 
 ### `wf list [--all]`
 

@@ -28,9 +28,16 @@ MVP 不会自动 merge。它为每个任务创建一个分支和一个 worktree�
   - 省略 `taskId` 时用于选择任务。
   - 未安装时会 fallback 到编号输入。
 - `VISUAL` 或 `EDITOR` (可选)
-  - `wf create` 省略 title 时用于编辑器输入。
+  - 仅在 `wf create` 省略 title 时使用。
+  - `VISUAL` 优先于 `EDITOR`。
+  - 请设置为 `PATH` 中可执行的编辑器命令，例如 `vim`、`nano` 或 `code`。
 
-`workforge` 不会安装 `tmux`、`claude`、`codex`、`aider`、`copilot` 或 `fzf`。请提前安装要使用的命令，并确保它们在 `PATH` 中。如果要使用编辑器创建任务，请设置 `VISUAL` 或 `EDITOR`。
+`workforge` 不会安装 `tmux`、`claude`、`codex`、`aider`、`copilot` 或 `fzf`。请提前安装要使用的命令，并确保它们在 `PATH` 中。如果想通过编辑 Markdown 模板创建任务，请设置 `VISUAL` 或 `EDITOR`。
+
+```bash
+export VISUAL=vim
+wf create
+```
 
 ## 安装
 
@@ -111,7 +118,7 @@ wf delete <taskId>
 
 从 `main` 创建 `workforge/<id>-<slug>` 分支，并在 `.workforge/worktrees/<id>` 创建 worktree。任务状态会变为 `created`。
 
-省略 `title` 时，WorkForge 会用 `VISUAL` 或 `EDITOR` 打开 Markdown 模板。编辑完成后，第一个 H1 会成为任务标题，正文整体会成为任务描述。省略 title 时不能同时使用 `--description`。
+省略 `title` 时，WorkForge 会用 `VISUAL` 或 `EDITOR` 中配置的编辑器打开 `.workforge/create-template.md`。`VISUAL` 优先；如果两个变量都未设置，命令会报错。编辑完成后，第一个 Markdown H1 会成为任务标题，正文整体会成为任务描述。省略 title 时不能同时使用 `--description`。如果在命令行中提供了 `title`，则不会启动编辑器。
 
 ### `wf list [--all]`
 

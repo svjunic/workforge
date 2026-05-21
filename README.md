@@ -28,9 +28,16 @@ The MVP does not automatically merge changes. It creates one branch and one work
   - Used for task selection when `taskId` is omitted.
   - Falls back to numbered input when unavailable.
 - `VISUAL` or `EDITOR` (optional)
-  - Used by `wf create` when the title is omitted.
+  - Used only when `wf create` is run without a title.
+  - `VISUAL` takes priority over `EDITOR`.
+  - Set it to an editor command available on `PATH`, such as `vim`, `nano`, or `code`.
 
-`workforge` does not install `tmux`, `claude`, `codex`, `aider`, `copilot`, or `fzf`. Install the commands you want to use and make sure they are available on `PATH`. Set `VISUAL` or `EDITOR` if you want editor-based task creation.
+`workforge` does not install `tmux`, `claude`, `codex`, `aider`, `copilot`, or `fzf`. Install the commands you want to use and make sure they are available on `PATH`. Set `VISUAL` or `EDITOR` if you want to create tasks by editing a Markdown template:
+
+```bash
+export VISUAL=vim
+wf create
+```
 
 ## Install
 
@@ -111,7 +118,7 @@ Creates `.workforge/config.json` interactively. WorkForge asks for each setting 
 
 Creates a `workforge/<id>-<slug>` branch from `main` and adds a worktree at `.workforge/worktrees/<id>`. The task status becomes `created`.
 
-When `title` is omitted, WorkForge opens a Markdown template in `VISUAL` or `EDITOR`. After editing, the first H1 becomes the task title and the full body becomes the task description. `--description` cannot be used when the title is omitted.
+When `title` is omitted, WorkForge opens `.workforge/create-template.md` in the editor configured by `VISUAL` or `EDITOR`. `VISUAL` takes priority; if neither variable is set, the command fails with an error. After editing, the first Markdown H1 becomes the task title and the full body becomes the task description. `--description` cannot be used when the title is omitted. When `title` is provided on the command line, no editor is opened.
 
 ### `wf list [--all]`
 
