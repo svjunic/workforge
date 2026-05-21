@@ -6,7 +6,8 @@ import { CliError } from "./errors.js";
 const adapters: Record<AgentName, AgentAdapter> = {
   claude: { name: "claude", command: "claude", args: [] },
   codex: { name: "codex", command: "codex", args: [] },
-  aider: { name: "aider", command: "aider", args: [] }
+  aider: { name: "aider", command: "aider", args: [] },
+  copilot: { name: "copilot", command: "copilot", args: [] }
 };
 
 export function formatSupportedAgents(): string {
@@ -32,6 +33,11 @@ export function buildAgentAdapter(agent: AgentName, isResume: boolean): AgentAda
       return {
         ...adapter,
         args: ["--architect", ...adapter.args]
+      };
+    case "copilot":
+      return {
+        ...adapter,
+        args: ["--mode", "plan", "-i", ...adapter.args]
       };
     default:
       return adapter;

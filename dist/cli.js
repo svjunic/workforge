@@ -9,7 +9,7 @@ import path4 from "node:path";
 
 // src/schemas.ts
 import { z } from "zod";
-var SUPPORTED_AGENTS = ["claude", "codex", "aider"];
+var SUPPORTED_AGENTS = ["claude", "codex", "aider", "copilot"];
 var AgentSchema = z.enum(SUPPORTED_AGENTS);
 var TmuxPanePlacementSchema = z.enum(["default", "rightColumnPairs"]);
 var ConfigSchema = z.object({
@@ -70,7 +70,8 @@ function shellQuote(value) {
 var adapters = {
   claude: { name: "claude", command: "claude", args: [] },
   codex: { name: "codex", command: "codex", args: [] },
-  aider: { name: "aider", command: "aider", args: [] }
+  aider: { name: "aider", command: "aider", args: [] },
+  copilot: { name: "copilot", command: "copilot", args: [] }
 };
 function formatSupportedAgents() {
   return SUPPORTED_AGENTS.join(", ");
@@ -93,6 +94,11 @@ function buildAgentAdapter(agent, isResume) {
       return {
         ...adapter,
         args: ["--architect", ...adapter.args]
+      };
+    case "copilot":
+      return {
+        ...adapter,
+        args: ["--mode", "plan", "-i", ...adapter.args]
       };
     default:
       return adapter;

@@ -1,95 +1,148 @@
 # workforge
 
-`workforge` は、AI コーディング作業を `git worktree` と `tmux` でタスク単位に分離して実行するローカル CLI です。
+Languages: [English](README.md) | [日本語](README.ja.md) | [简体中文](README.zh.md)
 
-MVP では自動 merge は行わず、1タスクにつき 1ブランチ、1 worktree を作成し、AI の作業結果を `diff` で review 状態に進めるところまでを扱います。
+`workforge` is a local CLI that isolates AI coding work by task using `git worktree` and `tmux`.
 
-## 必要なもの
+The MVP does not automatically merge changes. It creates one branch and one worktree per task, runs an AI coding adapter there, and helps you move the task into review by saving and showing its `diff`.
 
-- Node.js 20 以上
+## What WorkForge Makes Easier
+
+- Keep AI edits isolated in a dedicated git worktree for each task.
+- Switch between AI adapters with `wf run --agent ...` instead of remembering each tool's startup flags.
+- Track running work through tmux panes or sessions, with logs saved under `.workforge/logs/`.
+- Review the task output with `wf diff` before deciding what to commit or merge.
+- Avoid accidental edits to your main worktree by giving every task its own branch and workspace.
+
+## Requirements
+
+- Node.js 20 or newer
 - git
 - tmux
-- 利用する AI adapter のコマンド
-  - 既定: `claude`
-  - 代替: `codex`、`aider`
-- fzf (任意)
-  - `taskId` 省略時の選択 UI に使います。
-  - 未インストールの場合は番号入力に fallback します。
-- `VISUAL` または `EDITOR` (任意)
-  - `wf create` で title を省略したときのエディタ入力に使います。
+- The AI adapter command you want to use
+  - Default: `claude`
+  - Alternatives: `codex`, `aider`, `copilot`
+- fzf (optional)
+  - Used for task selection when `taskId` is omitted.
+  - Falls back to numbered input when unavailable.
+- `VISUAL` or `EDITOR` (optional)
+  - Used by `wf create` when the title is omitted.
 
-`tmux`、`claude`、`codex`、`aider`、`fzf` は `workforge` ではインストールしません。使うものは事前に PATH から実行できる状態にしてください。エディタ入力を使う場合は `VISUAL` または `EDITOR` を設定してください。
+`workforge` does not install `tmux`, `claude`, `codex`, `aider`, `copilot`, or `fzf`. Install the commands you want to use and make sure they are available on `PATH`. Set `VISUAL` or `EDITOR` if you want editor-based task creation.
 
-## 開発用の実行
-
-```bash
-git clone <workforge-repo-url>
-cd workforge
-npm install
-npm run dev -- --help
-npm run dev -- create "ログイン画面を修正する"
-```
-
-## ローカル CLI として使う
+## Install
 
 ```bash
-npm run build
-npm link
+npm install -g github:svjunic/workforge
+wf --help
 
 cd /path/to/target-git-repo
-wf create "ログイン画面を修正する"
+wf create "Fix the login screen"
 wf run [taskId]
 ```
 
-## コマンド
+This installs the committed CLI bundle and makes the `wf` command available globally.
+
+## Development
+
+Use this flow when you want to modify WorkForge itself.
+
+```bash
+git clone https://github.com/svjunic/workforge.git
+cd workforge
+npm ci
+npm run dev -- --help
+npm run dev -- create "Fix the login screen"
+```
+
+Use `npm ci` to install exactly what is recorded in `package-lock.json`.
+
+## Example Workflow
+
+```bash
+wf create "Fix login validation"
+wf run <taskId> --agent claude
+```
+
+WorkForge creates a branch like `workforge/<id>-<slug>` from `main`, adds a worktree under `.workforge/worktrees/<id>`, and starts the selected adapter in tmux.
+
+While the task is running:
+
+```bash
+wf status <taskId>
+wf log <taskId>
+wf stop <taskId>
+wf resume <taskId>
+```
+
+When the adapter finishes, review the changes:
+
+```bash
+wf diff <taskId>
+```
+
+Then inspect, test, commit, and merge using your normal git workflow. When you no longer need the task worktree:
+
+```bash
+wf delete <taskId>
+```
+
+## Commands
 
 ### `wf create [title] [--description <text>]`
 
-`main` から `workforge/<id>-<slug>` ブランチを作成し、`.workforge/worktrees/<id>` に worktree を作ります。タスク状態は `created` になります。
+Creates a `workforge/<id>-<slug>` branch from `main` and adds a worktree at `.workforge/worktrees/<id>`. The task status becomes `created`.
 
-`title` を省略すると、`VISUAL` または `EDITOR` のエディタで Markdown テンプレートを開きます。編集後、最初の H1 をタスクタイトル、本文全体をタスク説明として保存します。title 省略時は `--description` を同時指定できません。
+When `title` is omitted, WorkForge opens a Markdown template in `VISUAL` or `EDITOR`. After editing, the first H1 becomes the task title and the full body becomes the task description. `--description` cannot be used when the title is omitted.
 
 ### `wf list [--all]`
 
-タスク一覧を作成時刻の新しい順に表示します。既定では `deleted` のタスクを表示しません。`--all` を指定すると `deleted` を含むすべてのタスクを表示します。
+Lists tasks by creation time, newest first. Deleted tasks are hidden by default. Use `--all` to include deleted tasks.
 
 ### `wf status [taskId]`
 
-タスク詳細と tmux の状態を表示します。`taskId` を省略した場合は簡易一覧を表示します。
+Shows task details and tmux status. When `taskId` is omitted, shows a compact task list.
 
-### `wf run [taskId] [--agent claude|codex|aider]`
+### `wf run [taskId] [--agent claude|codex|aider|copilot]`
 
-選択した adapter をタスクの worktree で tmux 起動します。`taskId` を省略した場合は `fzf`、または番号入力で未削除タスクを選択します。tmux 内から実行した場合は現在の window 内に新しい pane を作成し、tmux 外から実行した場合は従来どおりタスク専用 session を作成します。`--agent` は `.workforge/config.json` の `defaultAgent` より優先されます。タスク状態は `running` になります。Claude adapter では `--permission-mode plan` を付けて起動し、Aider adapter では `--architect` を付けて architect mode で起動します。
+Starts the selected adapter in tmux inside the task worktree. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task. When run from inside tmux, WorkForge creates a new pane in the current window. When run outside tmux, it creates a dedicated task session. `--agent` overrides `defaultAgent` in `.workforge/config.json`. The task status becomes `running`.
 
-WorkForge は、タスクタイトルと説明に加えて「この git worktree の中だけで作業すること」「main の worktree を変更しないこと」「実装から検証まで完了すること」をプロンプトへ追記します。各 adapter には、この合成済みプロンプトを渡します。
+Agent-specific startup behavior:
+
+- Claude: starts with `--permission-mode plan`.
+- Aider: starts with `--architect` in architect mode.
+- Copilot: starts GitHub Copilot CLI with `--mode plan -i`.
+- Codex: starts without extra mode flags.
+
+WorkForge appends its own instructions to the task title and description before sending the prompt to each adapter: work only inside this git worktree, do not modify the main worktree, and complete implementation through verification.
 
 ### `wf stop <taskId>`
 
-対象タスクの tmux pane/session に `Ctrl-C` を送り、タスク状態を `stopped` にします。
+Sends `Ctrl-C` to the task tmux pane or session and sets the task status to `stopped`.
 
 ### `wf resume <taskId>`
 
-同じ worktree で adapter を再起動します。タスク状態は `running` になります。Claude adapter では `--permission-mode auto` を付けて起動します。Codex adapter には同等の mode 引数を付けません。Aider adapter は `run` と同じく `--architect` を付けて architect mode で再起動します。
+Restarts the adapter in the same worktree and sets the task status to `running`. Claude starts with `--permission-mode auto`. Aider starts with `--architect` again. Copilot starts with `--mode plan -i` again. Codex starts without extra mode flags.
 
 ### `wf diff <taskId>`
 
-タスク worktree の差分を表示し、`.workforge/diffs/<taskId>.patch` に保存します。タスク状態は `review` になります。
+Shows the task worktree diff and saves it to `.workforge/diffs/<taskId>.patch`. The task status becomes `review`.
 
 ### `wf comment <taskId> <text>`
 
-`.workforge/comments/<taskId>.jsonl` にコメントを追記します。
+Appends a comment to `.workforge/comments/<taskId>.jsonl`.
 
 ### `wf log <taskId>`
 
-`.workforge/logs/<taskId>.log` に保存された tmux ログを表示します。
+Prints the saved tmux log from `.workforge/logs/<taskId>.log`.
 
 ### `wf delete [taskId] [--force] [--all]`
 
-タスク worktree を削除し、タスク状態を `deleted` にします。`taskId` を省略した場合は `fzf`、または番号入力で未削除タスクを選択します。`--all` は未削除タスクをすべて削除します。全削除前には確認プロンプトを表示します。worktree 削除に失敗した場合、意図した削除なら `--force` を付けて再実行します。
+Removes a task worktree and sets the task status to `deleted`. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task. `--all` deletes every non-deleted task after a confirmation prompt. If `git worktree remove` fails and the removal is intentional, rerun with `--force`.
 
 ## `.workforge/config.json`
 
-初回実行時に対象 git リポジトリ内へ以下の設定が作成されます。
+The first command run in a target git repository creates this config:
 
 ```json
 {
@@ -101,17 +154,17 @@ WorkForge は、タスクタイトルと説明に加えて「この git worktree
 }
 ```
 
-`defaultAgent` は `claude`、`codex`、`aider` のいずれかを指定できます。
+`defaultAgent` can be `claude`, `codex`, `aider`, or `copilot`.
 
-`tmuxPanePlacement` は `rightColumnPairs` または `default` を指定できます。`rightColumnPairs` は tmux 内で `run` / `resume` したとき、1枚目を右に作り、次をその下に作り、以後同じ流れを繰り返します。`default` は tmux の既定 split に任せます。tmux 外で実行して task 専用 session を作る場合、この設定は使いません。
+`tmuxPanePlacement` can be `rightColumnPairs` or `default`. `rightColumnPairs` creates the first pane on the right, the next one below it, and repeats that pattern when `run` or `resume` is invoked from inside tmux. `default` leaves splitting to tmux defaults. This setting is not used when WorkForge creates a dedicated task session outside tmux.
 
-## create テンプレート
+## Create Template
 
-初回実行時に `.workforge/create-template.md` が作成されます。`wf create` で title を省略したときは、このテンプレートをエディタで開きます。対象リポジトリごとに内容を変更できます。
+The first run creates `.workforge/create-template.md`. When `wf create` is called without a title, WorkForge opens this template in your editor. You can customize it per target repository.
 
-## 作成されるファイル
+## Created Files
 
-対象 git リポジトリには `.workforge/` 配下だけを作成します。
+WorkForge only creates files under `.workforge/` in the target git repository.
 
 ```text
 .workforge/
@@ -125,16 +178,16 @@ WorkForge は、タスクタイトルと説明に加えて「この git worktree
   worktrees/
 ```
 
-## 制約
+## Constraints
 
-- `main` は直接変更しません。
-- 1 task = 1 branch = 1 worktree です。
-- AI プロセス終了後も、既定では tmux pane/session を残します。
-- 停止したタスクは `resume` で再開します。
-- 自動 merge は行いません。
-- git リポジトリ外、初期コミットなし、`tmux` なし、adapter コマンドなし、設定不正は明確なエラーにします。
+- WorkForge does not modify `main` directly.
+- One task equals one branch and one worktree.
+- By default, tmux panes or sessions remain after the AI process exits.
+- Stopped tasks are restarted with `resume`.
+- WorkForge does not automatically merge changes.
+- Running outside a git repository, missing an initial commit, missing `tmux`, missing an adapter command, or invalid config produces a clear error.
 
-## 検証
+## Verification
 
 ```bash
 npm run typecheck

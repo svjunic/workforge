@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const SUPPORTED_AGENTS = ["claude", "codex", "aider"] as const;
+export const SUPPORTED_AGENTS = ["claude", "codex", "aider", "copilot"] as const;
 
 export const AgentSchema = z.enum(SUPPORTED_AGENTS);
 
