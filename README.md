@@ -4,6 +4,8 @@ Languages: [English](README.md) | [日本語](README.ja.md) | [简体中文](REA
 
 `workforge` is a local CLI that isolates AI coding work by task using `git worktree` and `tmux`.
 
+WorkForge is currently under active development, so commands and config may change.
+
 The MVP does not automatically merge changes. It creates one branch and one worktree per task, runs an AI coding adapter there, and helps you move the task into review by saving and showing its `diff`.
 
 ## What WorkForge Makes Easier
@@ -58,6 +60,16 @@ npm run dev -- create "Fix the login screen"
 ```
 
 Use `npm ci` to install exactly what is recorded in `package-lock.json`.
+
+To test the local checkout through the real `wf` command, link it globally:
+
+```bash
+npm run build
+npm link
+wf --help
+```
+
+After changing source files, run `npm run build` again so the linked `wf` command uses the latest `dist/cli.js`. When you no longer need the link, run `npm unlink -g workforge`.
 
 ## Example Workflow
 

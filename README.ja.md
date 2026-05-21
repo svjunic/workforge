@@ -4,6 +4,8 @@
 
 `workforge` は、AI コーディング作業を `git worktree` と `tmux` でタスク単位に分離して実行するローカル CLI です。
 
+WorkForge は現在開発中のため、コマンドや設定は変更される可能性があります。
+
 MVP では自動 merge は行わず、1タスクにつき 1ブランチ、1 worktree を作成し、AI の作業結果を `diff` で review 状態に進めるところまでを扱います。
 
 ## 何が楽になるか
@@ -58,6 +60,16 @@ npm run dev -- create "ログイン画面を修正する"
 ```
 
 `package-lock.json` に記録された依存を再現するため `npm ci` を使います。
+
+ローカル checkout を実際の `wf` コマンドとして試したい場合は、グローバルに link します。
+
+```bash
+npm run build
+npm link
+wf --help
+```
+
+ソース変更後は、link された `wf` コマンドが最新の `dist/cli.js` を使うように `npm run build` を再実行してください。不要になった link は `npm unlink -g workforge` で解除できます。
 
 ## ワークフロー例
 

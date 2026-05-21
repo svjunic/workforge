@@ -4,6 +4,8 @@
 
 `workforge` 是一个本地 CLI，用 `git worktree` 和 `tmux` 按任务隔离 AI 编码工作。
 
+WorkForge 目前仍在开发中，命令和配置可能会变化。
+
 MVP 不会自动 merge。它为每个任务创建一个分支和一个 worktree，在其中运行 AI coding adapter，并通过保存和显示 `diff` 帮助你进入 review 状态。
 
 ## WorkForge 让什么更轻松
@@ -58,6 +60,16 @@ npm run dev -- create "修复登录页面"
 ```
 
 使用 `npm ci` 按 `package-lock.json` 精确安装依赖。
+
+如果想通过真实的 `wf` 命令测试本地 checkout，可以把它 link 到全局。
+
+```bash
+npm run build
+npm link
+wf --help
+```
+
+修改源码后，请重新运行 `npm run build`，这样已 link 的 `wf` 命令才会使用最新的 `dist/cli.js`。不再需要 link 时，可以运行 `npm unlink -g workforge`。
 
 ## 工作流示例
 
