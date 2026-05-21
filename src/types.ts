@@ -1,4 +1,8 @@
-export type AgentName = "claude" | "codex";
+import type { z } from "zod";
+
+import type { AgentSchema } from "./schemas.js";
+
+export type AgentName = z.infer<typeof AgentSchema>;
 export type TmuxPanePlacement = "default" | "rightColumnPairs";
 export type TaskStatus = "created" | "running" | "stopped" | "review" | "deleted";
 export type TmuxTargetType = "session" | "window" | "pane";

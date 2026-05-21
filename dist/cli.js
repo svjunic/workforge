@@ -9,7 +9,8 @@ import path4 from "node:path";
 
 // src/schemas.ts
 import { z } from "zod";
-var AgentSchema = z.enum(["claude", "codex"]);
+var SUPPORTED_AGENTS = ["claude", "codex", "aider"];
+var AgentSchema = z.enum(SUPPORTED_AGENTS);
 var TmuxPanePlacementSchema = z.enum(["default", "rightColumnPairs"]);
 var ConfigSchema = z.object({
   defaultAgent: AgentSchema.default("claude"),
@@ -68,21 +69,34 @@ function shellQuote(value) {
 // src/agents.ts
 var adapters = {
   claude: { name: "claude", command: "claude", args: [] },
-  codex: { name: "codex", command: "codex", args: [] }
+  codex: { name: "codex", command: "codex", args: [] },
+  aider: { name: "aider", command: "aider", args: [] }
 };
+function formatSupportedAgents() {
+  return SUPPORTED_AGENTS.join(", ");
+}
 function resolveAgent(agentOption, config) {
   if (!agentOption) return config.defaultAgent;
   const parsed = AgentSchema.safeParse(agentOption);
-  if (!parsed.success) throw new CliError(`\u672A\u5BFE\u5FDC\u306E\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u3067\u3059: ${agentOption}\u3002claude \u307E\u305F\u306F codex \u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
+  if (!parsed.success) throw new CliError(`\u672A\u5BFE\u5FDC\u306E\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u3067\u3059: ${agentOption}\u3002${formatSupportedAgents()} \u306E\u3044\u305A\u308C\u304B\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
   return parsed.data;
 }
 function buildAgentAdapter(agent, isResume) {
   const adapter = adapters[agent];
-  if (agent !== "claude") return adapter;
-  return {
-    ...adapter,
-    args: ["--permission-mode", isResume ? "auto" : "plan", ...adapter.args]
-  };
+  switch (agent) {
+    case "claude":
+      return {
+        ...adapter,
+        args: ["--permission-mode", isResume ? "auto" : "plan", ...adapter.args]
+      };
+    case "aider":
+      return {
+        ...adapter,
+        args: ["--architect", ...adapter.args]
+      };
+    default:
+      return adapter;
+  }
 }
 function buildAgentPrompt(task, isResume) {
   const lines = [
@@ -544,7 +558,7 @@ function buildProgram() {
       console.log(`tmux: ${target} (${alive ? "\u5B58\u5728\u3057\u307E\u3059" : "\u898B\u3064\u304B\u308A\u307E\u305B\u3093"})`);
     }
   });
-  program.command("run").argument("[taskId]", "\u30BF\u30B9\u30AFID").option("--agent <agent>", "\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8 adapter: claude \u307E\u305F\u306F codex").description("\u30BF\u30B9\u30AF\u7528\u306E\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u3092 tmux \u3067\u8D77\u52D5\u3057\u307E\u3059\u3002").action(async (id, options) => {
+  program.command("run").argument("[taskId]", "\u30BF\u30B9\u30AFID").option("--agent <agent>", `\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8 adapter: ${formatSupportedAgents()}`).description("\u30BF\u30B9\u30AF\u7528\u306E\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u3092 tmux \u3067\u8D77\u52D5\u3057\u307E\u3059\u3002").action(async (id, options) => {
     const taskId2 = id ?? await selectTaskIdFromRepo("\u5B9F\u884C\u3059\u308B\u30BF\u30B9\u30AF\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
     await runTask(taskId2, options.agent, false);
   });

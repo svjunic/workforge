@@ -11,14 +11,14 @@ MVP では自動 merge は行わず、1タスクにつき 1ブランチ、1 work
 - tmux
 - 利用する AI adapter のコマンド
   - 既定: `claude`
-  - 代替: `codex`
+  - 代替: `codex`、`aider`
 - fzf (任意)
   - `taskId` 省略時の選択 UI に使います。
   - 未インストールの場合は番号入力に fallback します。
 - `VISUAL` または `EDITOR` (任意)
   - `wf create` で title を省略したときのエディタ入力に使います。
 
-`tmux`、`claude`、`codex`、`fzf` は `workforge` ではインストールしません。使うものは事前に PATH から実行できる状態にしてください。エディタ入力を使う場合は `VISUAL` または `EDITOR` を設定してください。
+`tmux`、`claude`、`codex`、`aider`、`fzf` は `workforge` ではインストールしません。使うものは事前に PATH から実行できる状態にしてください。エディタ入力を使う場合は `VISUAL` または `EDITOR` を設定してください。
 
 ## 開発用の実行
 
@@ -57,9 +57,11 @@ wf run [taskId]
 
 タスク詳細と tmux の状態を表示します。`taskId` を省略した場合は簡易一覧を表示します。
 
-### `wf run [taskId] [--agent claude|codex]`
+### `wf run [taskId] [--agent claude|codex|aider]`
 
-選択した adapter をタスクの worktree で tmux 起動します。`taskId` を省略した場合は `fzf`、または番号入力で未削除タスクを選択します。tmux 内から実行した場合は現在の window 内に新しい pane を作成し、tmux 外から実行した場合は従来どおりタスク専用 session を作成します。`--agent` は `.workforge/config.json` の `defaultAgent` より優先されます。タスク状態は `running` になります。Claude adapter では `--permission-mode plan` を付けて起動します。
+選択した adapter をタスクの worktree で tmux 起動します。`taskId` を省略した場合は `fzf`、または番号入力で未削除タスクを選択します。tmux 内から実行した場合は現在の window 内に新しい pane を作成し、tmux 外から実行した場合は従来どおりタスク専用 session を作成します。`--agent` は `.workforge/config.json` の `defaultAgent` より優先されます。タスク状態は `running` になります。Claude adapter では `--permission-mode plan` を付けて起動し、Aider adapter では `--architect` を付けて architect mode で起動します。
+
+WorkForge は、タスクタイトルと説明に加えて「この git worktree の中だけで作業すること」「main の worktree を変更しないこと」「実装から検証まで完了すること」をプロンプトへ追記します。各 adapter には、この合成済みプロンプトを渡します。
 
 ### `wf stop <taskId>`
 
@@ -67,7 +69,7 @@ wf run [taskId]
 
 ### `wf resume <taskId>`
 
-同じ worktree で adapter を再起動します。タスク状態は `running` になります。Claude adapter では `--permission-mode auto` を付けて起動します。Codex adapter には同等の mode 引数を付けません。
+同じ worktree で adapter を再起動します。タスク状態は `running` になります。Claude adapter では `--permission-mode auto` を付けて起動します。Codex adapter には同等の mode 引数を付けません。Aider adapter は `run` と同じく `--architect` を付けて architect mode で再起動します。
 
 ### `wf diff <taskId>`
 
@@ -99,7 +101,7 @@ wf run [taskId]
 }
 ```
 
-`defaultAgent` は `claude` または `codex` を指定できます。
+`defaultAgent` は `claude`、`codex`、`aider` のいずれかを指定できます。
 
 `tmuxPanePlacement` は `rightColumnPairs` または `default` を指定できます。`rightColumnPairs` は tmux 内で `run` / `resume` したとき、1枚目を右に作り、次をその下に作り、以後同じ流れを繰り返します。`default` は tmux の既定 split に任せます。tmux 外で実行して task 専用 session を作る場合、この設定は使いません。
 

@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-export const AgentSchema = z.enum(["claude", "codex"]);
+export const SUPPORTED_AGENTS = ["claude", "codex", "aider"] as const;
+
+export const AgentSchema = z.enum(SUPPORTED_AGENTS);
 
 export const TmuxPanePlacementSchema = z.enum(["default", "rightColumnPairs"]);
 

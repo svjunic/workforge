@@ -4,7 +4,7 @@ import { customAlphabet } from "nanoid";
 import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { buildAgentAdapter, buildAgentPrompt, buildTmuxShellCommand, resolveAgent } from "./agents.js";
+import { buildAgentAdapter, buildAgentPrompt, buildTmuxShellCommand, formatSupportedAgents, resolveAgent } from "./agents.js";
 import { COMMENTS_DIR, DIFFS_DIR, LOGS_DIR } from "./constants.js";
 import { CliError } from "./errors.js";
 import { ensureBaseBranch, ensureInitialCommit, git, gitAt, loadRepoContext } from "./git.js";
@@ -132,7 +132,7 @@ export function buildProgram() {
   program
     .command("run")
     .argument("[taskId]", "タスクID")
-    .option("--agent <agent>", "エージェント adapter: claude または codex")
+    .option("--agent <agent>", `エージェント adapter: ${formatSupportedAgents()}`)
     .description("タスク用のエージェントを tmux で起動します。")
     .action(async (id: string | undefined, options: { agent?: string }) => {
       const taskId = id ?? await selectTaskIdFromRepo("実行するタスクを選択してください");
