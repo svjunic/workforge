@@ -6,6 +6,7 @@ import { execa as execa6 } from "execa";
 import { customAlphabet } from "nanoid";
 import { appendFile, readFile as readFile3, rm as rm2, writeFile as writeFile3 } from "node:fs/promises";
 import path5 from "node:path";
+import { createInterface as createInterface2 } from "node:readline/promises";
 
 // src/schemas.ts
 import { z } from "zod";
@@ -275,24 +276,30 @@ function extractMarkdownTitle(markdown) {
 
 // src/storage.ts
 async function ensureInitialized(ctx) {
+  await ensureWorkforgeFiles(ctx);
+  await ensureConfigExists(ctx);
+}
+async function ensureWorkforgeFiles(ctx) {
   await mkdir3(ctx.workforgeDir, { recursive: true });
   await mkdir3(path4.join(ctx.workforgeDir, LOGS_DIR), { recursive: true });
   await mkdir3(path4.join(ctx.workforgeDir, COMMENTS_DIR), { recursive: true });
   await mkdir3(path4.join(ctx.workforgeDir, DIFFS_DIR), { recursive: true });
   await mkdir3(path4.join(ctx.workforgeDir, WORKTREES_DIR), { recursive: true });
-  const configPath = path4.join(ctx.workforgeDir, CONFIG_FILE);
   const tasksPath = path4.join(ctx.workforgeDir, TASKS_FILE);
-  try {
-    await readFile2(configPath, "utf8");
-  } catch {
-    await writeJson(configPath, defaultConfig());
-  }
   try {
     await readFile2(tasksPath, "utf8");
   } catch {
     await writeJson(tasksPath, { tasks: [] });
   }
   await ensureCreateTemplate(ctx);
+}
+async function ensureConfigExists(ctx) {
+  const configPath = path4.join(ctx.workforgeDir, CONFIG_FILE);
+  try {
+    await readFile2(configPath, "utf8");
+  } catch {
+    throw new CliError(`${path4.relative(ctx.root, configPath)} \u304C\u3042\u308A\u307E\u305B\u3093\u3002\u5148\u306B wf init \u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
+  }
 }
 async function loadConfig(ctx) {
   const configPath = path4.join(ctx.workforgeDir, CONFIG_FILE);
@@ -541,6 +548,20 @@ var taskId = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 8);
 function buildProgram() {
   const program = new Command();
   program.name("wf").description("git worktree \u3068 tmux pane/session \u3067 AI \u30BF\u30B9\u30AF\u3092\u30ED\u30FC\u30AB\u30EB\u5B9F\u884C\u3059\u308B CLI\u3002").version("0.1.0", "-V, --version", "\u30D0\u30FC\u30B8\u30E7\u30F3\u756A\u53F7\u3092\u8868\u793A\u3057\u307E\u3059\u3002").helpOption("-h, --help", "\u30D8\u30EB\u30D7\u3092\u8868\u793A\u3057\u307E\u3059\u3002").addHelpCommand("help [command]", "\u30B3\u30DE\u30F3\u30C9\u306E\u30D8\u30EB\u30D7\u3092\u8868\u793A\u3057\u307E\u3059\u3002");
+  program.command("init").description(".workforge/config.json \u3092\u5BFE\u8A71\u5F0F\u306B\u4F5C\u6210\u3057\u307E\u3059\u3002").action(async () => {
+    const ctx = await loadRepoContext();
+    await ensureWorkforgeFiles(ctx);
+    const configPath = path5.join(ctx.workforgeDir, CONFIG_FILE);
+    if (await fileExists(configPath)) {
+      if (!await confirmPrompt(`${path5.relative(ctx.root, configPath)} \u306F\u65E2\u306B\u5B58\u5728\u3057\u307E\u3059\u3002\u4E0A\u66F8\u304D\u3057\u307E\u3059\u304B? [y/N] `)) {
+        console.log("\u521D\u671F\u5316\u3092\u4E2D\u6B62\u3057\u307E\u3057\u305F\u3002");
+        return;
+      }
+    }
+    const config = await promptConfig();
+    await writeJson(configPath, config);
+    console.log(`\u4F5C\u6210\u3057\u307E\u3057\u305F: ${path5.relative(ctx.root, configPath)}`);
+  });
   program.command("create").argument("[title]", "\u30BF\u30B9\u30AF\u30BF\u30A4\u30C8\u30EB").option("--description <text>", "\u30BF\u30B9\u30AF\u306E\u8AAC\u660E").action(async (title, options) => {
     const ctx = await loadRepoContext();
     await ensureInitialized(ctx);
@@ -735,6 +756,67 @@ async function selectTaskIdFromRepo(prompt) {
   const ctx = await loadRepoContext();
   await ensureInitialized(ctx);
   return selectTaskId(prompt, (await loadTasks(ctx)).tasks);
+}
+async function promptConfig() {
+  const defaults = defaultConfig();
+  return {
+    defaultAgent: await selectOption("defaultAgent", [...SUPPORTED_AGENTS], defaults.defaultAgent),
+    worktreeRoot: await selectDefaultOrCustom("worktreeRoot", defaults.worktreeRoot),
+    tmuxSessionPrefix: await selectDefaultOrCustom("tmuxSessionPrefix", defaults.tmuxSessionPrefix),
+    keepPaneOnDone: await selectBoolean("keepPaneOnDone", defaults.keepPaneOnDone),
+    tmuxPanePlacement: await selectOption(
+      "tmuxPanePlacement",
+      ["rightColumnPairs", "default"],
+      defaults.tmuxPanePlacement
+    )
+  };
+}
+async function selectOption(name, choices, defaultValue) {
+  ensureInteractivePrompt();
+  console.log(`${name} \u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044:`);
+  choices.forEach((choice, index) => {
+    const suffix = choice === defaultValue ? " (default)" : "";
+    console.log(`${index + 1}. ${choice}${suffix}`);
+  });
+  const answer = await question2("\u756A\u53F7\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044: ");
+  const selectedIndex = answer.trim() === "" ? choices.indexOf(defaultValue) + 1 : Number(answer.trim());
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 1 || selectedIndex > choices.length) {
+    throw new CliError(`${name} \u306E\u9078\u629E\u304C\u4E0D\u6B63\u3067\u3059\u3002`);
+  }
+  return choices[selectedIndex - 1];
+}
+async function selectDefaultOrCustom(name, defaultValue) {
+  const mode = await selectOption(`${name} \u306E\u8A2D\u5B9A\u65B9\u6CD5`, ["default", "custom"], "default");
+  if (mode === "default") return defaultValue;
+  const value = (await question2(`${name} \u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044: `)).trim();
+  if (!value) throw new CliError(`${name} \u306F\u7A7A\u306B\u3067\u304D\u307E\u305B\u3093\u3002`);
+  return value;
+}
+async function selectBoolean(name, defaultValue) {
+  const selected = await selectOption(name, ["true", "false"], defaultValue ? "true" : "false");
+  return selected === "true";
+}
+async function fileExists(filePath) {
+  try {
+    await readFile3(filePath, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+function ensureInteractivePrompt() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new CliError("\u5BFE\u8A71\u30D7\u30ED\u30F3\u30D7\u30C8\u3092\u8868\u793A\u3067\u304D\u307E\u305B\u3093\u3002TTY \u3067 wf init \u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+  }
+}
+async function question2(prompt) {
+  ensureInteractivePrompt();
+  const rl = createInterface2({ input: process.stdin, output: process.stdout });
+  try {
+    return await rl.question(prompt);
+  } finally {
+    rl.close();
+  }
 }
 async function deleteTask(ctx, task, options) {
   if (await tmuxTargetExists(task)) {

@@ -17,20 +17,18 @@ import { ensureCreateTemplate } from "./template.js";
 import type { Config, RepoContext, TasksFile, TmuxLayout } from "./types.js";
 
 export async function ensureInitialized(ctx: RepoContext) {
+  await ensureWorkforgeFiles(ctx);
+  await ensureConfigExists(ctx);
+}
+
+export async function ensureWorkforgeFiles(ctx: RepoContext) {
   await mkdir(ctx.workforgeDir, { recursive: true });
   await mkdir(path.join(ctx.workforgeDir, LOGS_DIR), { recursive: true });
   await mkdir(path.join(ctx.workforgeDir, COMMENTS_DIR), { recursive: true });
   await mkdir(path.join(ctx.workforgeDir, DIFFS_DIR), { recursive: true });
   await mkdir(path.join(ctx.workforgeDir, WORKTREES_DIR), { recursive: true });
 
-  const configPath = path.join(ctx.workforgeDir, CONFIG_FILE);
   const tasksPath = path.join(ctx.workforgeDir, TASKS_FILE);
-
-  try {
-    await readFile(configPath, "utf8");
-  } catch {
-    await writeJson(configPath, defaultConfig());
-  }
 
   try {
     await readFile(tasksPath, "utf8");
@@ -39,6 +37,15 @@ export async function ensureInitialized(ctx: RepoContext) {
   }
 
   await ensureCreateTemplate(ctx);
+}
+
+export async function ensureConfigExists(ctx: RepoContext) {
+  const configPath = path.join(ctx.workforgeDir, CONFIG_FILE);
+  try {
+    await readFile(configPath, "utf8");
+  } catch {
+    throw new CliError(`${path.relative(ctx.root, configPath)} がありません。先に wf init を実行してください。`);
+  }
 }
 
 export async function loadConfig(ctx: RepoContext): Promise<Config> {
@@ -89,7 +96,7 @@ export async function writeJson(filePath: string, value: unknown) {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-function defaultConfig(): Config {
+export function defaultConfig(): Config {
   return {
     defaultAgent: "claude",
     worktreeRoot: ".workforge/worktrees",

@@ -3,13 +3,15 @@ import { execa } from "execa";
 import { customAlphabet } from "nanoid";
 import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
 
 import { buildAgentAdapter, buildAgentPrompt, buildTmuxShellCommand, formatSupportedAgents, resolveAgent } from "./agents.js";
-import { COMMENTS_DIR, DIFFS_DIR, LOGS_DIR } from "./constants.js";
+import { COMMENTS_DIR, CONFIG_FILE, DIFFS_DIR, LOGS_DIR } from "./constants.js";
 import { CliError } from "./errors.js";
 import { ensureBaseBranch, ensureInitialCommit, git, gitAt, loadRepoContext } from "./git.js";
 import { copyLocalAiSettings } from "./local-settings.js";
-import { ensureInitialized, loadConfig, loadTasks, saveTasks } from "./storage.js";
+import { SUPPORTED_AGENTS } from "./schemas.js";
+import { defaultConfig, ensureInitialized, ensureWorkforgeFiles, loadConfig, loadTasks, saveTasks, writeJson } from "./storage.js";
 import { ensureCommand } from "./system.js";
 import {
   confirmPrompt,
@@ -23,7 +25,7 @@ import {
 } from "./tasks.js";
 import { resolveCreateInput } from "./template.js";
 import { killTmuxTarget, startTmuxTask, tmuxTargetExists, tmuxTargetForTask } from "./tmux.js";
-import type { RepoContext, Task } from "./types.js";
+import type { Config, RepoContext, Task, TmuxPanePlacement } from "./types.js";
 
 const taskId = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 8);
 
@@ -36,6 +38,26 @@ export function buildProgram() {
     .version("0.1.0", "-V, --version", "バージョン番号を表示します。")
     .helpOption("-h, --help", "ヘルプを表示します。")
     .addHelpCommand("help [command]", "コマンドのヘルプを表示します。");
+
+  program
+    .command("init")
+    .description(".workforge/config.json を対話式に作成します。")
+    .action(async () => {
+      const ctx = await loadRepoContext();
+      await ensureWorkforgeFiles(ctx);
+
+      const configPath = path.join(ctx.workforgeDir, CONFIG_FILE);
+      if (await fileExists(configPath)) {
+        if (!await confirmPrompt(`${path.relative(ctx.root, configPath)} は既に存在します。上書きしますか? [y/N] `)) {
+          console.log("初期化を中止しました。");
+          return;
+        }
+      }
+
+      const config = await promptConfig();
+      await writeJson(configPath, config);
+      console.log(`作成しました: ${path.relative(ctx.root, configPath)}`);
+    });
 
   program
     .command("create")
@@ -308,6 +330,77 @@ async function selectTaskIdFromRepo(prompt: string): Promise<string> {
   const ctx = await loadRepoContext();
   await ensureInitialized(ctx);
   return selectTaskId(prompt, (await loadTasks(ctx)).tasks);
+}
+
+async function promptConfig(): Promise<Config> {
+  const defaults = defaultConfig();
+  return {
+    defaultAgent: await selectOption("defaultAgent", [...SUPPORTED_AGENTS], defaults.defaultAgent),
+    worktreeRoot: await selectDefaultOrCustom("worktreeRoot", defaults.worktreeRoot),
+    tmuxSessionPrefix: await selectDefaultOrCustom("tmuxSessionPrefix", defaults.tmuxSessionPrefix),
+    keepPaneOnDone: await selectBoolean("keepPaneOnDone", defaults.keepPaneOnDone),
+    tmuxPanePlacement: await selectOption<TmuxPanePlacement>(
+      "tmuxPanePlacement",
+      ["rightColumnPairs", "default"],
+      defaults.tmuxPanePlacement
+    )
+  };
+}
+
+async function selectOption<T extends string>(name: string, choices: readonly T[], defaultValue: T): Promise<T> {
+  ensureInteractivePrompt();
+  console.log(`${name} を選択してください:`);
+  choices.forEach((choice, index) => {
+    const suffix = choice === defaultValue ? " (default)" : "";
+    console.log(`${index + 1}. ${choice}${suffix}`);
+  });
+
+  const answer = await question("番号を入力してください: ");
+  const selectedIndex = answer.trim() === "" ? choices.indexOf(defaultValue) + 1 : Number(answer.trim());
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 1 || selectedIndex > choices.length) {
+    throw new CliError(`${name} の選択が不正です。`);
+  }
+
+  return choices[selectedIndex - 1]!;
+}
+
+async function selectDefaultOrCustom(name: string, defaultValue: string): Promise<string> {
+  const mode = await selectOption(`${name} の設定方法`, ["default", "custom"], "default");
+  if (mode === "default") return defaultValue;
+
+  const value = (await question(`${name} を入力してください: `)).trim();
+  if (!value) throw new CliError(`${name} は空にできません。`);
+  return value;
+}
+
+async function selectBoolean(name: string, defaultValue: boolean): Promise<boolean> {
+  const selected = await selectOption(name, ["true", "false"], defaultValue ? "true" : "false");
+  return selected === "true";
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await readFile(filePath, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ensureInteractivePrompt() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new CliError("対話プロンプトを表示できません。TTY で wf init を実行してください。");
+  }
+}
+
+async function question(prompt: string): Promise<string> {
+  ensureInteractivePrompt();
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await rl.question(prompt);
+  } finally {
+    rl.close();
+  }
 }
 
 async function deleteTask(ctx: RepoContext, task: Task, options: { force?: boolean }) {

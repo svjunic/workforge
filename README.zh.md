@@ -37,6 +37,7 @@ npm install -g github:svjunic/workforge
 wf --help
 
 cd /path/to/target-git-repo
+wf init
 wf create "修复登录页面"
 wf run [taskId]
 ```
@@ -52,6 +53,7 @@ git clone https://github.com/svjunic/workforge.git
 cd workforge
 npm ci
 npm run dev -- --help
+npm run dev -- init
 npm run dev -- create "修复登录页面"
 ```
 
@@ -88,6 +90,10 @@ wf delete <taskId>
 ```
 
 ## 命令
+
+### `wf init`
+
+以交互方式创建 `.workforge/config.json`。WorkForge 会按顺序询问每个配置项，并在最后一个回答后写入 config。使用其他命令前，请在每个目标 git 仓库中先运行一次。
 
 ### `wf create [title] [--description <text>]`
 
@@ -142,7 +148,7 @@ WorkForge 会在任务标题和描述之外追加自己的指令，然后再把�
 
 ## `.workforge/config.json`
 
-首次在目标 git 仓库中运行命令时，会创建以下配置。
+`wf init` 会在目标 git 仓库中创建以下配置。
 
 ```json
 {
@@ -160,7 +166,7 @@ WorkForge 会在任务标题和描述之外追加自己的指令，然后再把�
 
 ## create 模板
 
-首次运行时会创建 `.workforge/create-template.md`。当 `wf create` 不传 title 时，WorkForge 会在编辑器中打开这个模板。你可以针对每个目标仓库自定义它。
+`wf init` 会创建 `.workforge/create-template.md`。当 `wf create` 不传 title 时，WorkForge 会在编辑器中打开这个模板。你可以针对每个目标仓库自定义它。
 
 ## 创建的文件
 

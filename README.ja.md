@@ -37,6 +37,7 @@ npm install -g github:svjunic/workforge
 wf --help
 
 cd /path/to/target-git-repo
+wf init
 wf create "ログイン画面を修正する"
 wf run [taskId]
 ```
@@ -52,6 +53,7 @@ git clone https://github.com/svjunic/workforge.git
 cd workforge
 npm ci
 npm run dev -- --help
+npm run dev -- init
 npm run dev -- create "ログイン画面を修正する"
 ```
 
@@ -88,6 +90,10 @@ wf delete <taskId>
 ```
 
 ## コマンド
+
+### `wf init`
+
+`.workforge/config.json` を対話式に作成します。WorkForge は各設定項目を順番に質問し、最後の回答後に config を書き込みます。他のコマンドを使う前に、対象 git リポジトリごとに一度実行してください。
 
 ### `wf create [title] [--description <text>]`
 
@@ -142,7 +148,7 @@ WorkForge は、タスクタイトルと説明に加えて「この git worktree
 
 ## `.workforge/config.json`
 
-初回実行時に対象 git リポジトリ内へ以下の設定が作成されます。
+`wf init` により、対象 git リポジトリ内へ以下の設定が作成されます。
 
 ```json
 {
@@ -160,7 +166,7 @@ WorkForge は、タスクタイトルと説明に加えて「この git worktree
 
 ## create テンプレート
 
-初回実行時に `.workforge/create-template.md` が作成されます。`wf create` で title を省略したときは、このテンプレートをエディタで開きます。対象リポジトリごとに内容を変更できます。
+`wf init` により `.workforge/create-template.md` が作成されます。`wf create` で title を省略したときは、このテンプレートをエディタで開きます。対象リポジトリごとに内容を変更できます。
 
 ## 作成されるファイル
 

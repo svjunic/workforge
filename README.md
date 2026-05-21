@@ -37,6 +37,7 @@ npm install -g github:svjunic/workforge
 wf --help
 
 cd /path/to/target-git-repo
+wf init
 wf create "Fix the login screen"
 wf run [taskId]
 ```
@@ -52,6 +53,7 @@ git clone https://github.com/svjunic/workforge.git
 cd workforge
 npm ci
 npm run dev -- --help
+npm run dev -- init
 npm run dev -- create "Fix the login screen"
 ```
 
@@ -88,6 +90,10 @@ wf delete <taskId>
 ```
 
 ## Commands
+
+### `wf init`
+
+Creates `.workforge/config.json` interactively. WorkForge asks for each setting in order and writes the config after the final answer. Run this once in each target git repository before using other commands.
 
 ### `wf create [title] [--description <text>]`
 
@@ -142,7 +148,7 @@ Removes a task worktree and sets the task status to `deleted`. When `taskId` is 
 
 ## `.workforge/config.json`
 
-The first command run in a target git repository creates this config:
+`wf init` creates this config in the target git repository:
 
 ```json
 {
@@ -160,7 +166,7 @@ The first command run in a target git repository creates this config:
 
 ## Create Template
 
-The first run creates `.workforge/create-template.md`. When `wf create` is called without a title, WorkForge opens this template in your editor. You can customize it per target repository.
+`wf init` creates `.workforge/create-template.md`. When `wf create` is called without a title, WorkForge opens this template in your editor. You can customize it per target repository.
 
 ## Created Files
 
