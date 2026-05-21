@@ -164,7 +164,7 @@ WorkForge は、タスクタイトルと説明に加えて「この git worktree
 
 ## 作成されるファイル
 
-対象 git リポジトリには `.workforge/` 配下だけを作成します。
+対象 git リポジトリには、管理ファイルとして `.workforge/` 配下を作成します。
 
 ```text
 .workforge/
@@ -178,13 +178,19 @@ WorkForge は、タスクタイトルと説明に加えて「この git worktree
   worktrees/
 ```
 
+`wf create` 時には、タスク worktree へ既知のローカル AI 設定もコピーします。コピー対象は `AGENTS.local.md`、`CLAUDE.local.md`、`CONVENTIONS.md`、`settings.local.json`、`.codex`、`.aider.conf.yml`、`.aider.conf.yaml`、`.aiderignore`、`.claude/skills`、`.claude/agents`、`.claude/rules`、`.claude/docs`、`.claude/commands`、`.github/copilot-instructions.md`、`.github/instructions` です。コピー元がないものは無視し、コピー先に同名ファイルやディレクトリがある場合は上書きしません。
+
 ## 制約
 
 - `main` は直接変更しません。
 - 1 task = 1 branch = 1 worktree です。
 - AI プロセス終了後も、既定では tmux pane/session を残します。
 - 停止したタスクは `resume` で再開します。
-- 自動 merge は行いません。
+- 自動 commit、merge、push、PR 作成は行いません。差分確認後は通常の git workflow で進めます。
+- ベースブランチは現在 `main` 固定です。任意のベースブランチ指定には未対応です。
+- `tmux`、AI adapter、`fzf` のインストール、認証、モデル設定は行いません。
+- `git worktree` は tracked ファイルだけを checkout します。未追跡または `.gitignore` 済みのローカル AI 設定は通常コピーされませんが、WorkForge は上記の既知パスだけを `wf create` 時にコピーします。
+- 作成済みタスクへ、親 worktree 側のローカル AI 設定変更を後から自動同期することはありません。必要な場合はタスク worktree 側で手動更新してください。
 - git リポジトリ外、初期コミットなし、`tmux` なし、adapter コマンドなし、設定不正は明確なエラーにします。
 
 ## 検証

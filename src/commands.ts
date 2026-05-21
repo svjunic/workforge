@@ -8,6 +8,7 @@ import { buildAgentAdapter, buildAgentPrompt, buildTmuxShellCommand, formatSuppo
 import { COMMENTS_DIR, DIFFS_DIR, LOGS_DIR } from "./constants.js";
 import { CliError } from "./errors.js";
 import { ensureBaseBranch, ensureInitialCommit, git, gitAt, loadRepoContext } from "./git.js";
+import { copyLocalAiSettings } from "./local-settings.js";
 import { ensureInitialized, loadConfig, loadTasks, saveTasks } from "./storage.js";
 import { ensureCommand } from "./system.js";
 import {
@@ -56,6 +57,7 @@ export function buildProgram() {
 
       await git(ctx, ["branch", branch, "main"]);
       await git(ctx, ["worktree", "add", worktreePath, branch]);
+      await copyLocalAiSettings(ctx, worktreePath);
 
       const now = new Date().toISOString();
       const task: Task = {

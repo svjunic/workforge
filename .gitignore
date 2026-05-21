@@ -36,3 +36,12 @@ settings.local.json
 .claude/rules
 .claude/docs
 .claude/commands
+
+# codex
+AGENTS.local.md
+.codex
+
+# aider
+.aider.conf.yml
+.aider.conf.yaml
+.aiderignore

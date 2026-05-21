@@ -5,7 +5,7 @@ import { Command } from "commander";
 import { execa as execa6 } from "execa";
 import { customAlphabet } from "nanoid";
 import { appendFile, readFile as readFile3, rm as rm2, writeFile as writeFile3 } from "node:fs/promises";
-import path4 from "node:path";
+import path5 from "node:path";
 
 // src/schemas.ts
 import { z } from "zod";
@@ -156,23 +156,70 @@ async function gitAt(cwd, args, options = {}) {
   return execa2("git", ["-C", cwd, ...args], options);
 }
 
+// src/local-settings.ts
+import { cp, mkdir, stat } from "node:fs/promises";
+import path2 from "node:path";
+var LOCAL_AI_SETTING_PATHS = [
+  "AGENTS.local.md",
+  "CLAUDE.local.md",
+  "CONVENTIONS.md",
+  "settings.local.json",
+  ".codex",
+  ".aider.conf.yml",
+  ".aider.conf.yaml",
+  ".aiderignore",
+  ".claude/skills",
+  ".claude/agents",
+  ".claude/rules",
+  ".claude/docs",
+  ".claude/commands",
+  ".github/copilot-instructions.md",
+  ".github/instructions"
+];
+async function copyLocalAiSettings(ctx, worktreePath) {
+  for (const relativePath of LOCAL_AI_SETTING_PATHS) {
+    const source = path2.join(ctx.root, relativePath);
+    if (!await exists(source)) continue;
+    const destination = path2.join(worktreePath, relativePath);
+    if (await exists(destination)) continue;
+    await mkdir(path2.dirname(destination), { recursive: true });
+    await cp(source, destination, {
+      recursive: true,
+      force: false,
+      errorOnExist: false
+    });
+  }
+}
+async function exists(filePath) {
+  try {
+    await stat(filePath);
+    return true;
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+function isNodeError(error) {
+  return error instanceof Error && "code" in error;
+}
+
 // src/storage.ts
-import { mkdir as mkdir2, readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
-import path3 from "node:path";
+import { mkdir as mkdir3, readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
+import path4 from "node:path";
 import { z as z2 } from "zod";
 
 // src/template.ts
 import { execa as execa3 } from "execa";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir as mkdir2, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import path2 from "node:path";
+import path3 from "node:path";
 import { fileURLToPath } from "node:url";
 async function ensureCreateTemplate(ctx) {
   const templatePath = userCreateTemplatePath(ctx);
   try {
     await readFile(templatePath, "utf8");
   } catch {
-    await mkdir(path2.dirname(templatePath), { recursive: true });
+    await mkdir2(path3.dirname(templatePath), { recursive: true });
     await writeFile(templatePath, await readDefaultCreateTemplate(), "utf8");
   }
 }
@@ -194,22 +241,22 @@ async function resolveCreateInput(ctx, title, options) {
   return { title: extractedTitle, description };
 }
 function userCreateTemplatePath(ctx) {
-  return path2.join(ctx.workforgeDir, CREATE_TEMPLATE_FILE);
+  return path3.join(ctx.workforgeDir, CREATE_TEMPLATE_FILE);
 }
 async function readDefaultCreateTemplate() {
   return readFile(defaultCreateTemplatePath(), "utf8");
 }
 function defaultCreateTemplatePath() {
-  const currentDir = path2.dirname(fileURLToPath(import.meta.url));
-  return path2.resolve(currentDir, "..", "templates", "create.md");
+  const currentDir = path3.dirname(fileURLToPath(import.meta.url));
+  return path3.resolve(currentDir, "..", "templates", "create.md");
 }
 async function editCreateTemplate(ctx) {
   const editor = process.env.VISUAL || process.env.EDITOR;
   if (!editor) {
     throw new CliError("title \u3092\u7701\u7565\u3059\u308B\u5834\u5408\u306F VISUAL \u307E\u305F\u306F EDITOR \u3092\u8A2D\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
   }
-  const tempDir = await mkdtemp(path2.join(tmpdir(), "workforge-create-"));
-  const tempPath = path2.join(tempDir, "task.md");
+  const tempDir = await mkdtemp(path3.join(tmpdir(), "workforge-create-"));
+  const tempPath = path3.join(tempDir, "task.md");
   await writeFile(tempPath, await readFile(userCreateTemplatePath(ctx), "utf8"), "utf8");
   try {
     const result = await execa3(editor, [tempPath], { stdio: "inherit", reject: false });
@@ -228,13 +275,13 @@ function extractMarkdownTitle(markdown) {
 
 // src/storage.ts
 async function ensureInitialized(ctx) {
-  await mkdir2(ctx.workforgeDir, { recursive: true });
-  await mkdir2(path3.join(ctx.workforgeDir, LOGS_DIR), { recursive: true });
-  await mkdir2(path3.join(ctx.workforgeDir, COMMENTS_DIR), { recursive: true });
-  await mkdir2(path3.join(ctx.workforgeDir, DIFFS_DIR), { recursive: true });
-  await mkdir2(path3.join(ctx.workforgeDir, WORKTREES_DIR), { recursive: true });
-  const configPath = path3.join(ctx.workforgeDir, CONFIG_FILE);
-  const tasksPath = path3.join(ctx.workforgeDir, TASKS_FILE);
+  await mkdir3(ctx.workforgeDir, { recursive: true });
+  await mkdir3(path4.join(ctx.workforgeDir, LOGS_DIR), { recursive: true });
+  await mkdir3(path4.join(ctx.workforgeDir, COMMENTS_DIR), { recursive: true });
+  await mkdir3(path4.join(ctx.workforgeDir, DIFFS_DIR), { recursive: true });
+  await mkdir3(path4.join(ctx.workforgeDir, WORKTREES_DIR), { recursive: true });
+  const configPath = path4.join(ctx.workforgeDir, CONFIG_FILE);
+  const tasksPath = path4.join(ctx.workforgeDir, TASKS_FILE);
   try {
     await readFile2(configPath, "utf8");
   } catch {
@@ -248,43 +295,43 @@ async function ensureInitialized(ctx) {
   await ensureCreateTemplate(ctx);
 }
 async function loadConfig(ctx) {
-  const configPath = path3.join(ctx.workforgeDir, CONFIG_FILE);
+  const configPath = path4.join(ctx.workforgeDir, CONFIG_FILE);
   try {
     return ConfigSchema.parse(JSON.parse(await readFile2(configPath, "utf8")));
   } catch (error) {
     if (error instanceof z2.ZodError) {
-      throw new CliError(`${path3.relative(ctx.root, configPath)} \u304C\u4E0D\u6B63\u3067\u3059: ${error.message}`);
+      throw new CliError(`${path4.relative(ctx.root, configPath)} \u304C\u4E0D\u6B63\u3067\u3059: ${error.message}`);
     }
-    throw new CliError(`${path3.relative(ctx.root, configPath)} \u3092\u8AAD\u307F\u8FBC\u3081\u307E\u305B\u3093\u3067\u3057\u305F\u3002`);
+    throw new CliError(`${path4.relative(ctx.root, configPath)} \u3092\u8AAD\u307F\u8FBC\u3081\u307E\u305B\u3093\u3067\u3057\u305F\u3002`);
   }
 }
 async function loadTasks(ctx) {
-  const tasksPath = path3.join(ctx.workforgeDir, TASKS_FILE);
+  const tasksPath = path4.join(ctx.workforgeDir, TASKS_FILE);
   try {
     return TasksSchema.parse(JSON.parse(await readFile2(tasksPath, "utf8")));
   } catch (error) {
     if (error instanceof z2.ZodError) {
-      throw new CliError(`${path3.relative(ctx.root, tasksPath)} \u304C\u4E0D\u6B63\u3067\u3059: ${error.message}`);
+      throw new CliError(`${path4.relative(ctx.root, tasksPath)} \u304C\u4E0D\u6B63\u3067\u3059: ${error.message}`);
     }
-    throw new CliError(`${path3.relative(ctx.root, tasksPath)} \u3092\u8AAD\u307F\u8FBC\u3081\u307E\u305B\u3093\u3067\u3057\u305F\u3002`);
+    throw new CliError(`${path4.relative(ctx.root, tasksPath)} \u3092\u8AAD\u307F\u8FBC\u3081\u307E\u305B\u3093\u3067\u3057\u305F\u3002`);
   }
 }
 async function saveTasks(ctx, tasks) {
-  await writeJson(path3.join(ctx.workforgeDir, TASKS_FILE), TasksSchema.parse(tasks));
+  await writeJson(path4.join(ctx.workforgeDir, TASKS_FILE), TasksSchema.parse(tasks));
 }
 async function loadTmuxLayout(ctx) {
-  const layoutPath = path3.join(ctx.workforgeDir, TMUX_LAYOUT_FILE);
+  const layoutPath = path4.join(ctx.workforgeDir, TMUX_LAYOUT_FILE);
   try {
     return TmuxLayoutSchema.parse(JSON.parse(await readFile2(layoutPath, "utf8")));
   } catch (error) {
     if (error instanceof z2.ZodError) {
-      throw new CliError(`${path3.relative(ctx.root, layoutPath)} \u304C\u4E0D\u6B63\u3067\u3059: ${error.message}`);
+      throw new CliError(`${path4.relative(ctx.root, layoutPath)} \u304C\u4E0D\u6B63\u3067\u3059: ${error.message}`);
     }
     return { windows: {} };
   }
 }
 async function saveTmuxLayout(ctx, layout) {
-  await writeJson(path3.join(ctx.workforgeDir, TMUX_LAYOUT_FILE), TmuxLayoutSchema.parse(layout));
+  await writeJson(path4.join(ctx.workforgeDir, TMUX_LAYOUT_FILE), TmuxLayoutSchema.parse(layout));
 }
 async function writeJson(filePath, value) {
   await writeFile2(filePath, `${JSON.stringify(value, null, 2)}
@@ -505,9 +552,10 @@ function buildProgram() {
     const id = taskId();
     const slug = slugify(input.title);
     const branch = `workforge/${id}-${slug}`;
-    const worktreePath = path4.resolve(ctx.root, config.worktreeRoot, id);
+    const worktreePath = path5.resolve(ctx.root, config.worktreeRoot, id);
     await git(ctx, ["branch", branch, "main"]);
     await git(ctx, ["worktree", "add", worktreePath, branch]);
+    await copyLocalAiSettings(ctx, worktreePath);
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const task = {
       id,
@@ -590,7 +638,7 @@ function buildProgram() {
     const task = findTask(tasks.tasks, id);
     const diff = await gitAt(task.worktreePath, ["diff"], { reject: false });
     const stdout = typeof diff.stdout === "string" ? diff.stdout : "";
-    const diffPath = path4.join(ctx.workforgeDir, DIFFS_DIR, `${task.id}.patch`);
+    const diffPath = path5.join(ctx.workforgeDir, DIFFS_DIR, `${task.id}.patch`);
     await writeFile3(diffPath, stdout, "utf8");
     updateTask(task, { status: "review" });
     await saveTasks(ctx, tasks);
@@ -602,7 +650,7 @@ function buildProgram() {
     await ensureInitialized(ctx);
     const tasks = await loadTasks(ctx);
     const task = findTask(tasks.tasks, id);
-    const commentPath = path4.join(ctx.workforgeDir, COMMENTS_DIR, `${task.id}.jsonl`);
+    const commentPath = path5.join(ctx.workforgeDir, COMMENTS_DIR, `${task.id}.jsonl`);
     const record = JSON.stringify({ taskId: task.id, text, createdAt: (/* @__PURE__ */ new Date()).toISOString() });
     await appendFile(commentPath, `${record}
 `, "utf8");
@@ -613,7 +661,7 @@ function buildProgram() {
     await ensureInitialized(ctx);
     const tasks = await loadTasks(ctx);
     const task = findTask(tasks.tasks, id);
-    const logPath = path4.join(ctx.workforgeDir, LOGS_DIR, `${task.id}.log`);
+    const logPath = path5.join(ctx.workforgeDir, LOGS_DIR, `${task.id}.log`);
     try {
       process.stdout.write(await readFile3(logPath, "utf8"));
     } catch {
@@ -664,7 +712,7 @@ async function runTask(id, agentOption, isResume) {
   const agent = resolveAgent(agentOption, config);
   const adapter = buildAgentAdapter(agent, isResume);
   await ensureCommand(adapter.command, `${agent} adapter \u3092\u4F7F\u3046\u306B\u306F ${adapter.command} \u304C\u5FC5\u8981\u3067\u3059\u3002`);
-  const logPath = path4.join(ctx.workforgeDir, LOGS_DIR, `${task.id}.log`);
+  const logPath = path5.join(ctx.workforgeDir, LOGS_DIR, `${task.id}.log`);
   const prompt = buildAgentPrompt(task, isResume);
   const shellCommand = buildTmuxShellCommand(adapter, prompt, logPath, config.keepPaneOnDone);
   if (await tmuxTargetExists(task)) {
