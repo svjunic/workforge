@@ -120,6 +120,10 @@ Creates a `workforge/<id>-<slug>` branch from `main` and adds a worktree at `.wo
 
 When `title` is omitted, WorkForge opens `.workforge/create-template.md` in the editor configured by `VISUAL` or `EDITOR`. `VISUAL` takes priority; if neither variable is set, the command fails with an error. After editing, the first Markdown H1 becomes the task title and the full body becomes the task description. `--description` cannot be used when the title is omitted. When `title` is provided on the command line, no editor is opened.
 
+### `wf edit [taskId]`
+
+Opens an existing task in the editor configured by `VISUAL` or `EDITOR` and updates its title and description. The first Markdown H1 becomes the task title, and the full body becomes the task description. Running and deleted tasks cannot be edited. Changes apply to the next `wf run` or `wf resume`; existing tmux processes are not updated in place.
+
 ### `wf list [--all]`
 
 Lists tasks by creation time, newest first. Deleted tasks are hidden by default. Use `--all` to include deleted tasks.

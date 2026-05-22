@@ -120,6 +120,10 @@ wf delete <taskId>
 
 省略 `title` 时，WorkForge 会用 `VISUAL` 或 `EDITOR` 中配置的编辑器打开 `.workforge/create-template.md`。`VISUAL` 优先；如果两个变量都未设置，命令会报错。编辑完成后，第一个 Markdown H1 会成为任务标题，正文整体会成为任务描述。省略 title 时不能同时使用 `--description`。如果在命令行中提供了 `title`，则不会启动编辑器。
 
+### `wf edit [taskId]`
+
+用 `VISUAL` 或 `EDITOR` 中配置的编辑器打开已有任务，并更新标题和描述。第一个 Markdown H1 会成为任务标题，正文整体会成为任务描述。运行中或已删除的任务不能编辑。更改会在下一次 `wf run` 或 `wf resume` 时生效，不会更新现有的 tmux 进程。
+
 ### `wf list [--all]`
 
 按创建时间倒序显示任务列表。默认不显示 `deleted` 任务。使用 `--all` 可显示包括 deleted 在内的全部任务。

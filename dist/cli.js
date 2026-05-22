@@ -245,6 +245,17 @@ async function resolveCreateInput(ctx, title, options) {
   }
   return { title: extractedTitle, description };
 }
+async function resolveTaskEditInput(task) {
+  const description = await editTaskMarkdown(task);
+  if (!description.trim()) {
+    throw new CliError("\u30BF\u30B9\u30AF\u672C\u6587\u304C\u7A7A\u3067\u3059\u3002");
+  }
+  const extractedTitle = extractMarkdownTitle(description);
+  if (!extractedTitle) {
+    throw new CliError("\u30BF\u30B9\u30AF\u672C\u6587\u306E\u6700\u521D\u306E Markdown H1 \u3092 title \u3068\u3057\u3066\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+  }
+  return { title: extractedTitle, description };
+}
 function userCreateTemplatePath(ctx) {
   return path3.join(ctx.workforgeDir, CREATE_TEMPLATE_FILE);
 }
@@ -272,6 +283,33 @@ async function editCreateTemplate(ctx) {
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+async function editTaskMarkdown(task) {
+  const editor = process.env.VISUAL || process.env.EDITOR;
+  if (!editor) {
+    throw new CliError("\u30BF\u30B9\u30AF\u3092\u7DE8\u96C6\u3059\u308B\u306B\u306F VISUAL \u307E\u305F\u306F EDITOR \u3092\u8A2D\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+  }
+  const tempDir = await mkdtemp(path3.join(tmpdir(), "workforge-edit-"));
+  const tempPath = path3.join(tempDir, "task.md");
+  await writeFile(tempPath, taskEditMarkdown(task), "utf8");
+  try {
+    const result = await execa3(editor, [tempPath], { stdio: "inherit", reject: false });
+    if (result.failed) {
+      throw new CliError(`\u30A8\u30C7\u30A3\u30BF\u3092\u7D42\u4E86\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F: ${result.shortMessage}`);
+    }
+    return await readFile(tempPath, "utf8");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+function taskEditMarkdown(task) {
+  if (task.description && extractMarkdownTitle(task.description)) return task.description;
+  const body = task.description?.trim();
+  return body ? `# ${task.title}
+
+${body}
+` : `# ${task.title}
+`;
 }
 function extractMarkdownTitle(markdown) {
   const h1 = markdown.split(/\r?\n/).find((line) => line.startsWith("# ") && line.slice(2).trim());
@@ -604,6 +642,18 @@ function buildProgram() {
     console.log(`\u4F5C\u6210\u3057\u307E\u3057\u305F: ${id}`);
     console.log(`\u30D6\u30E9\u30F3\u30C1: ${branch}`);
     console.log(`worktree: ${worktreePath}`);
+  });
+  program.command("edit").argument("[taskId]", "\u30BF\u30B9\u30AFID").description("\u4F5C\u6210\u6E08\u307F\u30BF\u30B9\u30AF\u306E\u30BF\u30A4\u30C8\u30EB\u3068\u8AAC\u660E\u3092\u7DE8\u96C6\u3057\u307E\u3059\u3002").action(async (id) => {
+    const ctx = await loadRepoContext();
+    await ensureInitialized(ctx);
+    const tasks = await loadTasks(ctx);
+    const task = findTask(tasks.tasks, id ?? await selectTaskId("\u7DE8\u96C6\u3059\u308B\u30BF\u30B9\u30AF\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044", tasks.tasks));
+    if (task.status === "deleted") throw new CliError(`\u30BF\u30B9\u30AF ${task.id} \u306F\u524A\u9664\u6E08\u307F\u3067\u3059\u3002`);
+    if (task.status === "running") throw new CliError(`\u30BF\u30B9\u30AF ${task.id} \u306F\u5B9F\u884C\u4E2D\u3067\u3059\u3002\u505C\u6B62\u3057\u3066\u304B\u3089\u7DE8\u96C6\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
+    const input = await resolveTaskEditInput(task);
+    updateTask(task, { title: input.title, description: input.description });
+    await saveTasks(ctx, tasks);
+    console.log(`\u66F4\u65B0\u3057\u307E\u3057\u305F: ${task.id}`);
   });
   program.command("list").option("--all", "deleted \u3092\u542B\u3080\u3059\u3079\u3066\u306E\u30BF\u30B9\u30AF\u3092\u8868\u793A\u3057\u307E\u3059").description("\u30BF\u30B9\u30AF\u4E00\u89A7\u3092\u8868\u793A\u3057\u307E\u3059\u3002").action(async (options) => {
     const ctx = await loadRepoContext();

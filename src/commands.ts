@@ -23,7 +23,7 @@ import {
   updateTask,
   visibleTasks
 } from "./tasks.js";
-import { resolveCreateInput } from "./template.js";
+import { resolveCreateInput, resolveTaskEditInput } from "./template.js";
 import { killTmuxTarget, startTmuxTask, tmuxTargetExists, tmuxTargetForTask } from "./tmux.js";
 import type { Config, RepoContext, Task, TmuxPanePlacement, TmuxShellMode } from "./types.js";
 
@@ -100,6 +100,25 @@ export function buildProgram() {
       console.log(`作成しました: ${id}`);
       console.log(`ブランチ: ${branch}`);
       console.log(`worktree: ${worktreePath}`);
+    });
+
+  program
+    .command("edit")
+    .argument("[taskId]", "タスクID")
+    .description("作成済みタスクのタイトルと説明を編集します。")
+    .action(async (id: string | undefined) => {
+      const ctx = await loadRepoContext();
+      await ensureInitialized(ctx);
+      const tasks = await loadTasks(ctx);
+      const task = findTask(tasks.tasks, id ?? await selectTaskId("編集するタスクを選択してください", tasks.tasks));
+
+      if (task.status === "deleted") throw new CliError(`タスク ${task.id} は削除済みです。`);
+      if (task.status === "running") throw new CliError(`タスク ${task.id} は実行中です。停止してから編集してください。`);
+
+      const input = await resolveTaskEditInput(task);
+      updateTask(task, { title: input.title, description: input.description });
+      await saveTasks(ctx, tasks);
+      console.log(`更新しました: ${task.id}`);
     });
 
   program
