@@ -6,6 +6,7 @@ import { execa as execa6 } from "execa";
 import { customAlphabet } from "nanoid";
 import { appendFile, readFile as readFile3, rm as rm2, writeFile as writeFile3 } from "node:fs/promises";
 import path5 from "node:path";
+import { emitKeypressEvents } from "node:readline";
 import { createInterface as createInterface2 } from "node:readline/promises";
 
 // src/schemas.ts
@@ -849,17 +850,9 @@ async function ensureAdapterCommand(command, shellMode, message) {
 }
 async function selectOption(name, choices, defaultValue) {
   ensureInteractivePrompt();
-  console.log(`${name} \u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044:`);
-  choices.forEach((choice, index) => {
-    const suffix = choice === defaultValue ? " (default)" : "";
-    console.log(`${index + 1}. ${choice}${suffix}`);
-  });
-  const answer = await question2("\u756A\u53F7\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044: ");
-  const selectedIndex = answer.trim() === "" ? choices.indexOf(defaultValue) + 1 : Number(answer.trim());
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 1 || selectedIndex > choices.length) {
-    throw new CliError(`${name} \u306E\u9078\u629E\u304C\u4E0D\u6B63\u3067\u3059\u3002`);
-  }
-  return choices[selectedIndex - 1];
+  const defaultIndex = choices.indexOf(defaultValue);
+  if (defaultIndex < 0) throw new CliError(`${name} \u306E\u521D\u671F\u5024\u304C\u4E0D\u6B63\u3067\u3059\u3002`);
+  return selectOptionByArrowKey(`${name} \u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044:`, choices, defaultIndex);
 }
 async function selectDefaultOrCustom(name, defaultValue) {
   const mode = await selectOption(`${name} \u306E\u8A2D\u5B9A\u65B9\u6CD5`, ["default", "custom"], "default");
@@ -884,6 +877,74 @@ function ensureInteractivePrompt() {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new CliError("\u5BFE\u8A71\u30D7\u30ED\u30F3\u30D7\u30C8\u3092\u8868\u793A\u3067\u304D\u307E\u305B\u3093\u3002TTY \u3067 wf init \u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
   }
+}
+async function selectOptionByArrowKey(prompt, choices, defaultIndex) {
+  ensureInteractivePrompt();
+  if (choices.length === 0) throw new CliError("\u9078\u629E\u80A2\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
+  if (defaultIndex < 0 || defaultIndex >= choices.length) throw new CliError("\u521D\u671F\u9078\u629E\u304C\u4E0D\u6B63\u3067\u3059\u3002");
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+  const wasRaw = Boolean(stdin.isRaw);
+  let selectedIndex = defaultIndex;
+  let renderedLines = 0;
+  const render = () => {
+    if (renderedLines > 0) {
+      stdout.write(`\x1B[${renderedLines}A`);
+    }
+    const lines = [
+      prompt,
+      ...choices.map((choice, index) => {
+        const cursor = index === selectedIndex ? "> " : "  ";
+        const suffix = index === defaultIndex ? " (default)" : "";
+        return `${cursor}${choice}${suffix}`;
+      }),
+      "\u2191/\u2193 \u3067\u9078\u629E, Enter \u3067\u78BA\u5B9A"
+    ];
+    for (let index = 0; index < lines.length; index += 1) {
+      stdout.write(`\x1B[2K\r${lines[index]}
+`);
+    }
+    renderedLines = lines.length;
+  };
+  return await new Promise((resolve, reject) => {
+    const cleanup = () => {
+      stdin.off("keypress", onKeypress);
+      if (!wasRaw) {
+        stdin.setRawMode(false);
+        stdin.pause();
+      }
+      stdout.write("\n");
+    };
+    const onKeypress = (_str, key) => {
+      if (key.ctrl && key.name === "c") {
+        cleanup();
+        reject(new CliError("\u64CD\u4F5C\u3092\u4E2D\u65AD\u3057\u307E\u3057\u305F\u3002"));
+        return;
+      }
+      if (key.name === "up") {
+        selectedIndex = (selectedIndex - 1 + choices.length) % choices.length;
+        render();
+        return;
+      }
+      if (key.name === "down") {
+        selectedIndex = (selectedIndex + 1) % choices.length;
+        render();
+        return;
+      }
+      if (key.name === "return") {
+        const selected = choices[selectedIndex];
+        cleanup();
+        resolve(selected);
+      }
+    };
+    emitKeypressEvents(stdin);
+    if (!wasRaw) {
+      stdin.setRawMode(true);
+      stdin.resume();
+    }
+    stdin.on("keypress", onKeypress);
+    render();
+  });
 }
 async function question2(prompt) {
   ensureInteractivePrompt();

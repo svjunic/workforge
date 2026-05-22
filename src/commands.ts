@@ -3,6 +3,7 @@ import { execa } from "execa";
 import { customAlphabet } from "nanoid";
 import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { emitKeypressEvents } from "node:readline";
 import { createInterface } from "node:readline/promises";
 
 import { buildAgentAdapter, buildAgentPrompt, buildTmuxShellCommand, formatSupportedAgents, resolveAgent } from "./agents.js";
@@ -388,19 +389,9 @@ async function ensureAdapterCommand(command: string, shellMode: TmuxShellMode, m
 
 async function selectOption<T extends string>(name: string, choices: readonly T[], defaultValue: T): Promise<T> {
   ensureInteractivePrompt();
-  console.log(`${name} を選択してください:`);
-  choices.forEach((choice, index) => {
-    const suffix = choice === defaultValue ? " (default)" : "";
-    console.log(`${index + 1}. ${choice}${suffix}`);
-  });
-
-  const answer = await question("番号を入力してください: ");
-  const selectedIndex = answer.trim() === "" ? choices.indexOf(defaultValue) + 1 : Number(answer.trim());
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 1 || selectedIndex > choices.length) {
-    throw new CliError(`${name} の選択が不正です。`);
-  }
-
-  return choices[selectedIndex - 1]!;
+  const defaultIndex = choices.indexOf(defaultValue);
+  if (defaultIndex < 0) throw new CliError(`${name} の初期値が不正です。`);
+  return selectOptionByArrowKey(`${name} を選択してください:`, choices, defaultIndex);
 }
 
 async function selectDefaultOrCustom(name: string, defaultValue: string): Promise<string> {
@@ -430,6 +421,89 @@ function ensureInteractivePrompt() {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new CliError("対話プロンプトを表示できません。TTY で wf init を実行してください。");
   }
+}
+
+async function selectOptionByArrowKey<T extends string>(
+  prompt: string,
+  choices: readonly T[],
+  defaultIndex: number
+): Promise<T> {
+  ensureInteractivePrompt();
+  if (choices.length === 0) throw new CliError("選択肢がありません。");
+  if (defaultIndex < 0 || defaultIndex >= choices.length) throw new CliError("初期選択が不正です。");
+
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+  const wasRaw = Boolean(stdin.isRaw);
+  let selectedIndex = defaultIndex;
+  let renderedLines = 0;
+
+  const render = () => {
+    if (renderedLines > 0) {
+      stdout.write(`\u001B[${renderedLines}A`);
+    }
+
+    const lines = [
+      prompt,
+      ...choices.map((choice, index) => {
+        const cursor = index === selectedIndex ? "> " : "  ";
+        const suffix = index === defaultIndex ? " (default)" : "";
+        return `${cursor}${choice}${suffix}`;
+      }),
+      "↑/↓ で選択, Enter で確定"
+    ];
+
+    for (let index = 0; index < lines.length; index += 1) {
+      stdout.write(`\u001B[2K\r${lines[index]}\n`);
+    }
+
+    renderedLines = lines.length;
+  };
+
+  return await new Promise<T>((resolve, reject) => {
+    const cleanup = () => {
+      stdin.off("keypress", onKeypress);
+      if (!wasRaw) {
+        stdin.setRawMode(false);
+        stdin.pause();
+      }
+      stdout.write("\n");
+    };
+
+    const onKeypress = (_str: string, key: { name?: string; ctrl?: boolean }) => {
+      if (key.ctrl && key.name === "c") {
+        cleanup();
+        reject(new CliError("操作を中断しました。"));
+        return;
+      }
+
+      if (key.name === "up") {
+        selectedIndex = (selectedIndex - 1 + choices.length) % choices.length;
+        render();
+        return;
+      }
+
+      if (key.name === "down") {
+        selectedIndex = (selectedIndex + 1) % choices.length;
+        render();
+        return;
+      }
+
+      if (key.name === "return") {
+        const selected = choices[selectedIndex];
+        cleanup();
+        resolve(selected!);
+      }
+    };
+
+    emitKeypressEvents(stdin);
+    if (!wasRaw) {
+      stdin.setRawMode(true);
+      stdin.resume();
+    }
+    stdin.on("keypress", onKeypress);
+    render();
+  });
 }
 
 async function question(prompt: string): Promise<string> {
