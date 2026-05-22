@@ -23,7 +23,7 @@ MVP では自動 merge は行わず、1タスクにつき 1ブランチ、1 work
 - tmux
 - 利用する AI adapter のコマンド
   - 既定: `claude`
-  - 代替: `codex`、`aider`、`copilot`
+  - 代替: `codex`、`aider`、`copilot`、`opencode`
 - fzf (任意)
   - `taskId` 省略時の選択 UI に使います。
   - 未インストールの場合は番号入力に fallback します。
@@ -32,7 +32,7 @@ MVP では自動 merge は行わず、1タスクにつき 1ブランチ、1 work
   - `VISUAL` が `EDITOR` より優先されます。
   - `vim`、`nano`、`code` など、`PATH` から実行できるエディタコマンドを指定します。
 
-`tmux`、`claude`、`codex`、`aider`、`copilot`、`fzf` は `workforge` ではインストールしません。使うものは事前に PATH から実行できる状態にしてください。Markdown テンプレートをエディタで編集してタスクを作りたい場合は、`VISUAL` または `EDITOR` を設定してください。
+`tmux`、`claude`、`codex`、`aider`、`copilot`、`opencode`、`fzf` は `workforge` ではインストールしません。使うものは事前に PATH から実行できる状態にしてください。Markdown テンプレートをエディタで編集してタスクを作りたい場合は、`VISUAL` または `EDITOR` を設定してください。
 
 ```bash
 export VISUAL=vim
@@ -132,7 +132,7 @@ wf delete <taskId>
 
 タスク詳細と tmux の状態を表示します。`taskId` を省略した場合は簡易一覧を表示します。
 
-### `wf run [taskId] [--agent claude|codex|aider|copilot]`
+### `wf run [taskId] [--agent claude|codex|aider|copilot|opencode]`
 
 選択した adapter をタスクの worktree で tmux 起動します。`taskId` を省略した場合は `fzf`、または番号入力で未削除タスクを選択します。`fzf` の候補一覧は画面上側に表示されます。tmux 内から実行した場合は現在の window 内に新しい pane を作成し、tmux 外から実行した場合は従来どおりタスク専用 session を作成します。`--agent` は `.workforge/config.json` の `defaultAgent` より優先されます。タスク状態は `running` になります。
 
@@ -141,6 +141,7 @@ agent ごとの起動挙動:
 - Claude: `--permission-mode plan` を付けて起動します。
 - Aider: `--architect` を付けて architect mode で起動します。
 - Copilot: `--mode plan -i` を付けて GitHub Copilot CLI の plan mode で対話起動します。
+- OpenCode: `--prompt` を付けて TUI を起動します。
 - Codex: 追加の mode 引数なしで起動します。
 
 WorkForge は、タスクタイトルと説明に加えて「この git worktree の中だけで作業すること」「main の worktree を変更しないこと」「実装から検証まで完了すること」をプロンプトへ追記します。各 adapter には、この合成済みプロンプトを渡します。
@@ -151,7 +152,7 @@ WorkForge は、タスクタイトルと説明に加えて「この git worktree
 
 ### `wf resume [taskId]`
 
-同じ worktree で adapter を再起動します。`taskId` を省略した場合は `fzf`、または番号入力で未削除タスクを選択します。タスク状態は `running` になります。Claude adapter では `--permission-mode auto` を付けて起動します。Aider adapter は `--architect` を再度付けます。Copilot adapter は `--mode plan -i` を再度付けます。Codex adapter には同等の mode 引数を付けません。
+同じ worktree で adapter を再起動します。`taskId` を省略した場合は `fzf`、または番号入力で未削除タスクを選択します。タスク状態は `running` になります。Claude adapter では `--permission-mode auto` を付けて起動します。Aider adapter は `--architect` を再度付けます。Copilot adapter は `--mode plan -i` を再度付けます。OpenCode adapter は `--prompt` を再度付けます。Codex adapter には同等の mode 引数を付けません。
 
 ### `wf diff [taskId]`
 
@@ -184,7 +185,7 @@ WorkForge は、タスクタイトルと説明に加えて「この git worktree
 }
 ```
 
-`defaultAgent` は `claude`、`codex`、`aider`、`copilot` のいずれかを指定できます。
+`defaultAgent` は `claude`、`codex`、`aider`、`copilot`、`opencode` のいずれかを指定できます。
 
 `tmuxPanePlacement` は `rightColumnPairs` または `default` を指定できます。`rightColumnPairs` は tmux 内で `run` / `resume` したとき、1枚目を右に作り、次をその下に作り、以後同じ流れを繰り返します。`default` は tmux の既定 split に任せます。tmux 外で実行して task 専用 session を作る場合、この設定は使いません。
 
@@ -210,7 +211,7 @@ WorkForge は、タスクタイトルと説明に加えて「この git worktree
   worktrees/
 ```
 
-`wf create` 時には、タスク worktree へ既知のローカル AI 設定もコピーします。コピー対象は `AGENTS.local.md`、`CLAUDE.local.md`、`CONVENTIONS.md`、`settings.local.json`、`.codex`、`.aider.conf.yml`、`.aider.conf.yaml`、`.aiderignore`、`.claude/skills`、`.claude/agents`、`.claude/rules`、`.claude/docs`、`.claude/commands`、`.github/copilot-instructions.md`、`.github/instructions` です。コピー元がないものは無視し、コピー先に同名ファイルやディレクトリがある場合は上書きしません。
+`wf create` 時には、タスク worktree へ既知のローカル AI 設定もコピーします。コピー対象は `AGENTS.local.md`、`CLAUDE.local.md`、`CONVENTIONS.md`、`settings.local.json`、`.codex`、`.opencode`、`.aider.conf.yml`、`.aider.conf.yaml`、`.aiderignore`、`.claude/skills`、`.claude/agents`、`.claude/rules`、`.claude/docs`、`.claude/commands`、`.github/copilot-instructions.md`、`.github/instructions` です。コピー元がないものは無視し、コピー先に同名ファイルやディレクトリがある場合は上書きしません。
 
 ## 制約
 

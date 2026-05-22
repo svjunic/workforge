@@ -11,7 +11,7 @@ import { createInterface as createInterface2 } from "node:readline/promises";
 
 // src/schemas.ts
 import { z } from "zod";
-var SUPPORTED_AGENTS = ["claude", "codex", "aider", "copilot"];
+var SUPPORTED_AGENTS = ["claude", "codex", "aider", "copilot", "opencode"];
 var AgentSchema = z.enum(SUPPORTED_AGENTS);
 var TmuxPanePlacementSchema = z.enum(["default", "rightColumnPairs"]);
 var TmuxShellModeSchema = z.enum(["loginInteractive", "direct"]);
@@ -75,7 +75,8 @@ var adapters = {
   claude: { name: "claude", command: "claude", args: [] },
   codex: { name: "codex", command: "codex", args: [] },
   aider: { name: "aider", command: "aider", args: [] },
-  copilot: { name: "copilot", command: "copilot", args: [] }
+  copilot: { name: "copilot", command: "copilot", args: [] },
+  opencode: { name: "opencode", command: "opencode", args: [] }
 };
 function formatSupportedAgents() {
   return SUPPORTED_AGENTS.join(", ");
@@ -103,6 +104,11 @@ function buildAgentAdapter(agent, isResume) {
       return {
         ...adapter,
         args: ["--mode", "plan", "-i", ...adapter.args]
+      };
+    case "opencode":
+      return {
+        ...adapter,
+        args: ["--prompt", ...adapter.args]
       };
     default:
       return adapter;
@@ -171,6 +177,7 @@ var LOCAL_AI_SETTING_PATHS = [
   "CONVENTIONS.md",
   "settings.local.json",
   ".codex",
+  ".opencode",
   ".aider.conf.yml",
   ".aider.conf.yaml",
   ".aiderignore",

@@ -9,6 +9,7 @@ const LOCAL_AI_SETTING_PATHS = [
   "CONVENTIONS.md",
   "settings.local.json",
   ".codex",
+  ".opencode",
   ".aider.conf.yml",
   ".aider.conf.yaml",
   ".aiderignore",

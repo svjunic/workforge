@@ -7,7 +7,8 @@ const adapters: Record<AgentName, AgentAdapter> = {
   claude: { name: "claude", command: "claude", args: [] },
   codex: { name: "codex", command: "codex", args: [] },
   aider: { name: "aider", command: "aider", args: [] },
-  copilot: { name: "copilot", command: "copilot", args: [] }
+  copilot: { name: "copilot", command: "copilot", args: [] },
+  opencode: { name: "opencode", command: "opencode", args: [] }
 };
 
 export function formatSupportedAgents(): string {
@@ -38,6 +39,11 @@ export function buildAgentAdapter(agent: AgentName, isResume: boolean): AgentAda
       return {
         ...adapter,
         args: ["--mode", "plan", "-i", ...adapter.args]
+      };
+    case "opencode":
+      return {
+        ...adapter,
+        args: ["--prompt", ...adapter.args]
       };
     default:
       return adapter;

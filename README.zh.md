@@ -23,7 +23,7 @@ MVP 不会自动 merge。它为每个任务创建一个分支和一个 worktree�
 - tmux
 - 要使用的 AI adapter 命令
   - 默认: `claude`
-  - 可选: `codex`、`aider`、`copilot`
+  - 可选: `codex`、`aider`、`copilot`、`opencode`
 - fzf (可选)
   - 省略 `taskId` 时用于选择任务。
   - 未安装时会 fallback 到编号输入。
@@ -32,7 +32,7 @@ MVP 不会自动 merge。它为每个任务创建一个分支和一个 worktree�
   - `VISUAL` 优先于 `EDITOR`。
   - 请设置为 `PATH` 中可执行的编辑器命令，例如 `vim`、`nano` 或 `code`。
 
-`workforge` 不会安装 `tmux`、`claude`、`codex`、`aider`、`copilot` 或 `fzf`。请提前安装要使用的命令，并确保它们在 `PATH` 中。如果想通过编辑 Markdown 模板创建任务，请设置 `VISUAL` 或 `EDITOR`。
+`workforge` 不会安装 `tmux`、`claude`、`codex`、`aider`、`copilot`、`opencode` 或 `fzf`。请提前安装要使用的命令，并确保它们在 `PATH` 中。如果想通过编辑 Markdown 模板创建任务，请设置 `VISUAL` 或 `EDITOR`。
 
 ```bash
 export VISUAL=vim
@@ -132,7 +132,7 @@ wf delete <taskId>
 
 显示任务详情和 tmux 状态。省略 `taskId` 时显示简洁任务列表。
 
-### `wf run [taskId] [--agent claude|codex|aider|copilot]`
+### `wf run [taskId] [--agent claude|codex|aider|copilot|opencode]`
 
 在任务 worktree 中用 tmux 启动选定的 adapter。省略 `taskId` 时，WorkForge 会用 `fzf` 或编号输入选择未删除任务；`fzf` 候选列表会显示在屏幕上方。从 tmux 内运行时，会在当前 window 中创建新 pane。从 tmux 外运行时，会创建任务专用 session。`--agent` 优先于 `.workforge/config.json` 中的 `defaultAgent`。任务状态会变为 `running`。
 
@@ -141,6 +141,7 @@ wf delete <taskId>
 - Claude: 使用 `--permission-mode plan` 启动。
 - Aider: 使用 `--architect` 以 architect mode 启动。
 - Copilot: 使用 `--mode plan -i` 以 GitHub Copilot CLI 的 plan mode 交互启动。
+- OpenCode: 使用 `--prompt` 启动 TUI。
 - Codex: 不添加额外 mode 参数。
 
 WorkForge 会在任务标题和描述之外追加自己的指令，然后再把合成后的 prompt 传给各 adapter: 只在当前 git worktree 中工作，不要修改 main worktree，并完成从实现到验证的全过程。
@@ -151,7 +152,7 @@ WorkForge 会在任务标题和描述之外追加自己的指令，然后再把�
 
 ### `wf resume [taskId]`
 
-在同一个 worktree 中重新启动 adapter，并将任务状态设为 `running`。省略 `taskId` 时，WorkForge 会用 `fzf` 或编号输入选择未删除任务。Claude 使用 `--permission-mode auto`。Aider 再次使用 `--architect`。Copilot 再次使用 `--mode plan -i`。Codex 不添加额外 mode 参数。
+在同一个 worktree 中重新启动 adapter，并将任务状态设为 `running`。省略 `taskId` 时，WorkForge 会用 `fzf` 或编号输入选择未删除任务。Claude 使用 `--permission-mode auto`。Aider 再次使用 `--architect`。Copilot 再次使用 `--mode plan -i`。OpenCode 再次使用 `--prompt`。Codex 不添加额外 mode 参数。
 
 ### `wf diff [taskId]`
 
@@ -184,7 +185,7 @@ WorkForge 会在任务标题和描述之外追加自己的指令，然后再把�
 }
 ```
 
-`defaultAgent` 可以是 `claude`、`codex`、`aider` 或 `copilot`。
+`defaultAgent` 可以是 `claude`、`codex`、`aider`、`copilot` 或 `opencode`。
 
 `tmuxPanePlacement` 可以是 `rightColumnPairs` 或 `default`。`rightColumnPairs` 在 tmux 内执行 `run` / `resume` 时，会先在右侧创建 pane，再在其下方创建下一个 pane，并重复这个模式。`default` 交给 tmux 默认 split 行为处理。从 tmux 外创建任务专用 session 时，不使用此设置。
 

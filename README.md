@@ -23,7 +23,7 @@ The MVP does not automatically merge changes. It creates one branch and one work
 - tmux
 - The AI adapter command you want to use
   - Default: `claude`
-  - Alternatives: `codex`, `aider`, `copilot`
+  - Alternatives: `codex`, `aider`, `copilot`, `opencode`
 - fzf (optional)
   - Used for task selection when `taskId` is omitted.
   - Falls back to numbered input when unavailable.
@@ -32,7 +32,7 @@ The MVP does not automatically merge changes. It creates one branch and one work
   - `VISUAL` takes priority over `EDITOR`.
   - Set it to an editor command available on `PATH`, such as `vim`, `nano`, or `code`.
 
-`workforge` does not install `tmux`, `claude`, `codex`, `aider`, `copilot`, or `fzf`. Install the commands you want to use and make sure they are available on `PATH`. Set `VISUAL` or `EDITOR` if you want to create tasks by editing a Markdown template:
+`workforge` does not install `tmux`, `claude`, `codex`, `aider`, `copilot`, `opencode`, or `fzf`. Install the commands you want to use and make sure they are available on `PATH`. Set `VISUAL` or `EDITOR` if you want to create tasks by editing a Markdown template:
 
 ```bash
 export VISUAL=vim
@@ -132,7 +132,7 @@ Lists tasks by creation time, newest first. Deleted tasks are hidden by default.
 
 Shows task details and tmux status. When `taskId` is omitted, shows a compact task list.
 
-### `wf run [taskId] [--agent claude|codex|aider|copilot]`
+### `wf run [taskId] [--agent claude|codex|aider|copilot|opencode]`
 
 Starts the selected adapter in tmux inside the task worktree. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task; the `fzf` candidate list is shown at the top of the screen. When run from inside tmux, WorkForge creates a new pane in the current window. When run outside tmux, it creates a dedicated task session. `--agent` overrides `defaultAgent` in `.workforge/config.json`. The task status becomes `running`.
 
@@ -141,6 +141,7 @@ Agent-specific startup behavior:
 - Claude: starts with `--permission-mode plan`.
 - Aider: starts with `--architect` in architect mode.
 - Copilot: starts GitHub Copilot CLI with `--mode plan -i`.
+- OpenCode: starts the TUI with `--prompt`.
 - Codex: starts without extra mode flags.
 
 WorkForge appends its own instructions to the task title and description before sending the prompt to each adapter: work only inside this git worktree, do not modify the main worktree, and complete implementation through verification.
@@ -151,7 +152,7 @@ Sends `Ctrl-C` to the task tmux pane or session and sets the task status to `sto
 
 ### `wf resume [taskId]`
 
-Restarts the adapter in the same worktree and sets the task status to `running`. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task. Claude starts with `--permission-mode auto`. Aider starts with `--architect` again. Copilot starts with `--mode plan -i` again. Codex starts without extra mode flags.
+Restarts the adapter in the same worktree and sets the task status to `running`. When `taskId` is omitted, WorkForge uses `fzf` or numbered input to select a non-deleted task. Claude starts with `--permission-mode auto`. Aider starts with `--architect` again. Copilot starts with `--mode plan -i` again. OpenCode starts with `--prompt` again. Codex starts without extra mode flags.
 
 ### `wf diff [taskId]`
 
@@ -184,7 +185,7 @@ Removes a task worktree and sets the task status to `deleted`. When `taskId` is 
 }
 ```
 
-`defaultAgent` can be `claude`, `codex`, `aider`, or `copilot`.
+`defaultAgent` can be `claude`, `codex`, `aider`, `copilot`, or `opencode`.
 
 `tmuxPanePlacement` can be `rightColumnPairs` or `default`. `rightColumnPairs` creates the first pane on the right, the next one below it, and repeats that pattern when `run` or `resume` is invoked from inside tmux. `default` leaves splitting to tmux defaults. This setting is not used when WorkForge creates a dedicated task session outside tmux.
 
